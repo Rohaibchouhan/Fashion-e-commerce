@@ -1,26 +1,63 @@
 @import "tailwindcss";
 
+@theme {
+  --container-7xl: 1440px;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #fbfbf9;
+  --foreground: #141413;
+  --card: #ffffff;
+  --card-foreground: #141413;
+  --muted: #f4f4f0;
+  --muted-foreground: #6c6c66;
+  --border: #e7e7e2;
+  --primary: #141413;
+  --primary-foreground: #ffffff;
+  --accent: #2e5c38; /* subtle sage / deep olive */
+  --accent-light: #eef4f0;
+  --warm-sand: #f5f2eb;
+  --site-width: 1440px;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Full site width configuration: 1440px */
+.max-w-7xl,
+.container-1440 {
+  max-width: 1440px !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4cc;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a3a399;
+}
+
+/* Hide scrollbar for category horizontal pills */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

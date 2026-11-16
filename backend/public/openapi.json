@@ -1,0 +1,446 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "WearDay Custom Fashion E-Commerce REST API",
+    "version": "1.0.0",
+    "description": "Production-grade custom e-commerce backend for WearDay fashion apparel. Built with Laravel, MySQL, Sanctum token & stateful session auth, real-time events, strict inventory reservations, and Next.js frontend parity.",
+    "contact": {
+      "name": "WearDay Engineering",
+      "email": "engineering@wearday.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Sanctum Token",
+        "description": "Enter your Sanctum Bearer token received from customer login or register API."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string", "example": "Resource validation or execution failed." },
+          "errors": { "type": "object" }
+        }
+      },
+      "CustomerUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Alex Morgan" },
+          "email": { "type": "string", "example": "alex.morgan@example.com" },
+          "phone": { "type": "string", "example": "+1 (555) 019-2834" },
+          "status": { "type": "string", "example": "active" }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Relaxed Fit Heavyweight Cotton Tee" },
+          "slug": { "type": "string", "example": "relaxed-fit-tee" },
+          "sku": { "type": "string", "example": "WD-M-TEE-001" },
+          "regularPrice": { "type": "number", "example": 45.00 },
+          "salePrice": { "type": "number", "nullable": true, "example": 38.00 },
+          "price": { "type": "number", "example": 38.00 },
+          "inStock": { "type": "boolean", "example": true },
+          "images": { "type": "array", "items": { "type": "string" } },
+          "sizes": { "type": "array", "items": { "type": "string" } },
+          "colors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "example": "Black" },
+                "value": { "type": "string", "example": "#111111" }
+              }
+            }
+          }
+        }
+      },
+      "CartItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 10 },
+          "productId": { "type": "integer", "example": 1 },
+          "variantId": { "type": "integer", "example": 3 },
+          "name": { "type": "string", "example": "Relaxed Fit Heavyweight Cotton Tee" },
+          "size": { "type": "string", "example": "M" },
+          "color": { "type": "string", "example": "Black" },
+          "quantity": { "type": "integer", "example": 2 },
+          "unitPrice": { "type": "number", "example": 38.00 },
+          "totalPrice": { "type": "number", "example": 76.00 }
+        }
+      },
+      "Cart": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/CartItem" } },
+          "itemsCount": { "type": "integer", "example": 2 },
+          "subtotal": { "type": "number", "example": 76.00 },
+          "discount": { "type": "number", "example": 10.00 },
+          "shipping": { "type": "number", "example": 0.00 },
+          "tax": { "type": "number", "example": 5.28 },
+          "total": { "type": "number", "example": 71.28 },
+          "coupon": { "type": "string", "nullable": true, "example": "WELCOME10" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "orderNumber": { "type": "string", "example": "WD-20261114-9921" },
+          "status": { "type": "string", "example": "confirmed" },
+          "paymentStatus": { "type": "string", "example": "completed" },
+          "fulfillmentStatus": { "type": "string", "example": "unfulfilled" },
+          "subtotal": { "type": "number", "example": 76.00 },
+          "discount": { "type": "number", "example": 10.00 },
+          "tax": { "type": "number", "example": 5.28 },
+          "shippingTotal": { "type": "number", "example": 0.00 },
+          "total": { "type": "number", "example": 71.28 },
+          "trackingNumber": { "type": "string", "nullable": true, "example": "WD-TRK-77182" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["Customer Authentication"],
+        "summary": "Register a new customer account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password", "password_confirmation"],
+                "properties": {
+                  "name": { "type": "string", "example": "Jane Doe" },
+                  "email": { "type": "string", "example": "jane.doe@example.com" },
+                  "phone": { "type": "string", "example": "+15551234567" },
+                  "password": { "type": "string", "example": "SecurePassword123!" },
+                  "password_confirmation": { "type": "string", "example": "SecurePassword123!" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully with Sanctum bearer token."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Customer Authentication"],
+        "summary": "Customer login with email and password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "example": "alex.morgan@example.com" },
+                  "password": { "type": "string", "example": "Password123!" },
+                  "device_name": { "type": "string", "example": "Next.js Web Client" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Authenticated successfully, returns Bearer token and customer profile." },
+          "401": { "description": "Invalid credentials or unverified email." }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["Customer Authentication"],
+        "summary": "Revoke active authentication token / end session",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Token successfully revoked." }
+        }
+      }
+    },
+    "/api/v1/auth/profile": {
+      "get": {
+        "tags": ["Customer Profile"],
+        "summary": "Get authenticated customer profile and saved addresses",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Customer profile details." }
+        }
+      },
+      "put": {
+        "tags": ["Customer Profile"],
+        "summary": "Update customer profile details",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "example": "Alex Morgan" },
+                  "phone": { "type": "string", "example": "+15559876543" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Profile updated." }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "tags": ["Catalog & Products"],
+        "summary": "Browse catalog with filtering, sorting, and pagination",
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search query across name, description, SKU" },
+          { "name": "category", "in": "query", "schema": { "type": "string" }, "description": "Category slug or ID" },
+          { "name": "gender", "in": "query", "schema": { "type": "string", "enum": ["men", "women", "unisex"] } },
+          { "name": "size", "in": "query", "schema": { "type": "string" }, "description": "Filter by size: S, M, L, XL, XXL" },
+          { "name": "color", "in": "query", "schema": { "type": "string" }, "description": "Filter by color: Black, White, etc." },
+          { "name": "min_price", "in": "query", "schema": { "type": "number" } },
+          { "name": "max_price", "in": "query", "schema": { "type": "number" } },
+          { "name": "in_stock", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["newest", "price_asc", "price_desc", "rating", "popular"] } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 12 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated list of active products." }
+        }
+      }
+    },
+    "/api/v1/products/{slug}": {
+      "get": {
+        "tags": ["Catalog & Products"],
+        "summary": "Get comprehensive product details and variation matrix",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" }, "example": "relaxed-fit-tee" }
+        ],
+        "responses": {
+          "200": { "description": "Product details with attributes, variants, gallery, and ratings." },
+          "404": { "description": "Product not found or inactive." }
+        }
+      }
+    },
+    "/api/v1/categories": {
+      "get": {
+        "tags": ["Categories & Collections"],
+        "summary": "Get category hierarchy tree (Men, Women, Casual, Outerwear)",
+        "responses": {
+          "200": { "description": "Hierarchical category list." }
+        }
+      }
+    },
+    "/api/v1/cart": {
+      "get": {
+        "tags": ["Shopping Cart"],
+        "summary": "Fetch customer cart contents, calculated subtotal, discounts, and tax",
+        "parameters": [
+          { "name": "X-Session-ID", "in": "header", "schema": { "type": "string" }, "description": "Cart session ID for guest/unauthenticated state" }
+        ],
+        "responses": {
+          "200": { "description": "Cart representation." }
+        }
+      }
+    },
+    "/api/v1/cart/items": {
+      "post": {
+        "tags": ["Shopping Cart"],
+        "summary": "Add garment variant to cart with real-time stock validation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["variant_id", "quantity"],
+                "properties": {
+                  "variant_id": { "type": "integer", "example": 1 },
+                  "quantity": { "type": "integer", "minimum": 1, "example": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Item added to cart." },
+          "422": { "description": "Requested quantity exceeds available inventory." }
+        }
+      }
+    },
+    "/api/v1/cart/coupon": {
+      "post": {
+        "tags": ["Shopping Cart"],
+        "summary": "Apply promotional coupon code to shopping cart",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["code"],
+                "properties": {
+                  "code": { "type": "string", "example": "WELCOME10" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Coupon applied and totals recomputed." },
+          "422": { "description": "Invalid, expired, or non-qualifying coupon code." }
+        }
+      }
+    },
+    "/api/v1/checkout/initialize": {
+      "get": {
+        "tags": ["Checkout & Orders"],
+        "summary": "Pre-flight checkout calculation: compute shipping options, tax rates, and current totals",
+        "responses": {
+          "200": { "description": "Available shipping methods, tax rates, and eligible discounts." }
+        }
+      }
+    },
+    "/api/v1/checkout/process": {
+      "post": {
+        "tags": ["Checkout & Orders"],
+        "summary": "Submit order with automatic customer creation, row-level stock reservation, and idempotency protection",
+        "parameters": [
+          { "name": "X-Idempotency-Key", "in": "header", "schema": { "type": "string" }, "description": "Unique UUID preventing duplicate order creation on network retry" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["customer", "shipping_address", "billing_address", "shipping_method_id", "payment_method", "terms_accepted"],
+                "properties": {
+                  "customer": {
+                    "type": "object",
+                    "required": ["name", "email", "phone"],
+                    "properties": {
+                      "name": { "type": "string", "example": "John Smith" },
+                      "email": { "type": "string", "example": "john.smith@example.com" },
+                      "phone": { "type": "string", "example": "+15554321098" }
+                    }
+                  },
+                  "shipping_address": {
+                    "type": "object",
+                    "required": ["address_line1", "city", "state", "postal_code", "country"],
+                    "properties": {
+                      "address_line1": { "type": "string", "example": "742 Evergreen Terrace" },
+                      "city": { "type": "string", "example": "Springfield" },
+                      "state": { "type": "string", "example": "OR" },
+                      "postal_code": { "type": "string", "example": "97477" },
+                      "country": { "type": "string", "example": "US" }
+                    }
+                  },
+                  "billing_address": {
+                    "type": "object",
+                    "required": ["address_line1", "city", "state", "postal_code", "country"]
+                  },
+                  "shipping_method_id": { "type": "integer", "example": 1 },
+                  "payment_method": { "type": "string", "enum": ["cod", "card", "bank_transfer"], "example": "cod" },
+                  "terms_accepted": { "type": "boolean", "example": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Order created, inventory reserved, payment initiated, and confirmation dispatched." },
+          "422": { "description": "Validation error or insufficient inventory." }
+        }
+      }
+    },
+    "/api/v1/orders/{orderNumber}/track": {
+      "get": {
+        "tags": ["Checkout & Orders"],
+        "summary": "Real-time order tracking with timeline milestones and shipping carrier status",
+        "parameters": [
+          { "name": "orderNumber", "in": "path", "required": true, "schema": { "type": "string" }, "example": "WD-20261114-1234" },
+          { "name": "email", "in": "query", "schema": { "type": "string" }, "description": "Optional email verification for non-token tracking lookups" }
+        ],
+        "responses": {
+          "200": { "description": "Order status, tracking events, milestones, and shipping details." }
+        }
+      }
+    },
+    "/api/v1/returns": {
+      "post": {
+        "tags": ["Returns & Refunds"],
+        "summary": "Initiate return request with 30-day window validation and reason categorization",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["order_number", "items", "reason"],
+                "properties": {
+                  "order_number": { "type": "string", "example": "WD-20261114-9921" },
+                  "reason": { "type": "string", "enum": ["defective", "wrong_size", "not_as_described", "changed_mind", "other"] },
+                  "customer_notes": { "type": "string", "example": "Too loose around the waist." },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["order_item_id", "quantity"],
+                      "properties": {
+                        "order_item_id": { "type": "integer", "example": 5 },
+                        "quantity": { "type": "integer", "example": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Return RMA allocated." },
+          "422": { "description": "Order outside 30-day window or items already returned." }
+        }
+      }
+    },
+    "/api/v1/webhooks/payment/{gateway}": {
+      "post": {
+        "tags": ["Payments & Webhooks"],
+        "summary": "External payment gateway asynchronous webhook receiver (signature verified)",
+        "parameters": [
+          { "name": "gateway", "in": "path", "required": true, "schema": { "type": "string", "enum": ["stripe", "card", "bank_transfer"] } }
+        ],
+        "responses": {
+          "200": { "description": "Webhook verified and processed idempotently." },
+          "400": { "description": "Invalid signature or malformed payload." }
+        }
+      }
+    }
+  }
+}
+

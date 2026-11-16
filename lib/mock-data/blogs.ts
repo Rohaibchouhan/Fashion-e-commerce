@@ -1,0 +1,78 @@
+import { BlogPost } from "@/types/blog";
+
+export const MOCK_BLOGS: BlogPost[] = [
+  {
+    id: "blog-1",
+    slug: "5-casual-looks-for-any-day",
+    title: "5 Casual Looks For Any Day",
+    subtitle: "Effortless wardrobe formulas that look polished without trying too hard",
+    excerpt: "Discover the 5 go-to outfit combinations designed for busy mornings, weekend coffee strolls, and everything in between.",
+    content: [
+      "Building a versatile capsule wardrobe does not require an endless closet. It begins with foundational garments engineered to pair harmoniously together.",
+      "Look 1: The Monochromatic Neutral. Pair the Oatmeal Relaxed Fit Tee with British Khaki Easy Chinos and Clean White Leather Sneakers. The soft earthy tones deliver instant visual calm and refined elegance.",
+      "Look 2: Weekend Layering. Layer our heavy-brushed Overshirt over a Forest Moss Essential Tee. Leave the buttons open for an easy drape.",
+      "Look 3: Relaxed Indigo. Combine a washed denim jacket with easy chinos and low-top leather kicks for an authentic weekend staple.",
+      "Look 4: The Elevated Hoodie. A dense, structured French Terry hoodie paired with tailored trousers bridges the gap between home comfort and cafe sophistication.",
+      "Look 5: Resort Ease. Wear an airy linen-blend button-down untucked over washed denim with the sleeves rolled twice.",
+    ],
+    coverImage: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80",
+    author: {
+      name: "Marcus Vance",
+      role: "Head of Menswear Styling",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
+    },
+    category: "Styling Guides",
+    date: "2026-11-10",
+    readTime: "4 min read",
+    tags: ["Capsule Wardrobe", "Everyday Style", "Men's Fashion", "Layering"],
+    featuredProductSlugs: ["relaxed-fit-tee", "easy-chino-pants", "overshirt", "clean-sneakers"],
+  },
+  {
+    id: "blog-2",
+    slug: "layering-101-made-simple",
+    title: "Layering 101 Made Simple",
+    subtitle: "The art of temperature regulation through natural breathable fabrics",
+    excerpt: "Master textures, weights, and proportions with our straightforward three-layer rule for unpredictable weather.",
+    content: [
+      "Layering is not just about staying warm; it is the most effective tool to introduce texture, depth, and personality to a minimalist outfit.",
+      "The Base: Always start with a breathable organic cotton or modal base. A 180-220 GSM tee ensures natural temperature regulation against the skin.",
+      "The Mid-Layer: Think utility overshirts, open-weave linen shirts, or fine-gauge knits. This layer provides thermal insulation while adding subtle tactile interest.",
+      "The Outer Shell: A structured denim trucker or canvas chore jacket provides wind resistance and structural silhouette definition.",
+    ],
+    coverImage: "https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=800&auto=format&fit=crop&q=80",
+    author: {
+      name: "Elena Rostova",
+      role: "Creative Director",
+      avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80",
+    },
+    category: "Styling Guides",
+    date: "2026-11-05",
+    readTime: "5 min read",
+    tags: ["Layering", "Fabrics", "Autumn Essentials"],
+    featuredProductSlugs: ["essential-tee", "overshirt", "denim-jacket"],
+  },
+  {
+    id: "blog-3",
+    slug: "from-work-to-weekend",
+    title: "From Work To Weekend",
+    subtitle: "Transitional styling that navigates office meetings and dinner plans with poise",
+    excerpt: "How versatile tailoring, subtle palettes, and clean footwear make desk-to-dinner transitions effortless.",
+    content: [
+      "Modern working life rarely conforms to strict formal dress codes. The contemporary standard embraces high-grade fabrics in relaxed silhouettes.",
+      "Swap stiff dress shirts for a crisp French-cotton linen blend shirt with an understated camp collar.",
+      "Replace rigid wool suiting trousers with our Easy Chino Pants — tailored in front, yet boasting elasticated back waistbands for uncompromised comfort during long commutes.",
+    ],
+    coverImage: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=800&auto=format&fit=crop&q=80",
+    author: {
+      name: "Julian Brooks",
+      role: "Senior Editorial Stylist",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
+    },
+    category: "Styling Guides",
+    date: "2026-10-29",
+    readTime: "3 min read",
+    tags: ["Smart Casual", "Office Wear", "Versatile Style"],
+    featuredProductSlugs: ["linen-blend-shirt", "easy-chino-pants", "clean-sneakers"],
+  },
+];
+

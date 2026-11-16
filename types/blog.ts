@@ -1,0 +1,20 @@
+export interface BlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  excerpt: string;
+  content: string[];
+  coverImage: string;
+  author: {
+    name: string;
+    role: string;
+    avatar: string;
+  };
+  category: string;
+  date: string;
+  readTime: string;
+  tags: string[];
+  featuredProductSlugs?: string[];
+}
+
