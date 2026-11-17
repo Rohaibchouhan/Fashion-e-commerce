@@ -2,11 +2,12 @@ import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MOCK_BLOGS } from "@/lib/mock-data/blogs";
-import { MOCK_PRODUCTS } from "@/lib/mock-data/products";
+import { BlogService } from "@/services/blog.service";
+import { ProductsService } from "@/services/products.service";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ProductCard } from "@/components/product/product-card";
-import { Clock, Calendar, ArrowLeft } from "lucide-react";
+import { Clock, ArrowLeft } from "lucide-react";
+import { formatDate } from "@/lib/utils";
 
 export default async function BlogPostPage({
   params,
@@ -14,14 +15,12 @@ export default async function BlogPostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const post = MOCK_BLOGS.find((b) => b.slug === slug);
+  const post = await BlogService.getBySlug(slug);
   if (!post) {
     notFound();
   }
 
-  const featuredProducts = MOCK_PRODUCTS.filter((p) =>
-    post.featuredProductSlugs?.includes(p.slug)
-  );
+  const { products } = await ProductsService.getAll({ limit: 3 });
 
   return (
     <article className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-14 space-y-10">
@@ -36,74 +35,85 @@ export default async function BlogPostPage({
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center gap-3 text-xs text-neutral-500 font-semibold uppercase tracking-wider">
-          <span>{post.category}</span>
+          <span>{post.category || "Style Guides"}</span>
           <span>•</span>
           <span className="flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> {post.readTime}
+            <Clock className="w-3.5 h-3.5" /> 4 min read
           </span>
-          <span>•</span>
-          <span>{post.date}</span>
+          {post.publishedAt && (
+            <>
+              <span>•</span>
+              <span>{formatDate(post.publishedAt)}</span>
+            </>
+          )}
         </div>
 
         <h1 className="text-3xl sm:text-5xl font-black text-neutral-900 tracking-tight leading-tight">
           {post.title}
         </h1>
-        <p className="text-base sm:text-lg text-neutral-600 leading-relaxed font-normal">
-          {post.subtitle}
-        </p>
+        {post.excerpt && (
+          <p className="text-base sm:text-lg text-neutral-600 leading-relaxed font-normal">
+            {post.excerpt}
+          </p>
+        )}
 
-        {/* Author Bio */}
+        {/* Author */}
         <div className="flex items-center gap-3 pt-3 border-t border-neutral-100">
-          <div className="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-100 shrink-0">
-            <Image src={post.author.avatar} alt={post.author.name} fill className="object-cover" />
+          <div className="w-10 h-10 rounded-full bg-neutral-900 text-white font-bold flex items-center justify-center text-xs">
+            {post.author ? post.author.slice(0, 2).toUpperCase() : "WD"}
           </div>
           <div>
-            <h4 className="text-xs font-bold text-neutral-900">{post.author.name}</h4>
-            <p className="text-[11px] text-neutral-400">{post.author.role}</p>
+            <h4 className="text-xs font-bold text-neutral-900">{post.author || "WearDay Editorial"}</h4>
+            <p className="text-[10px] text-neutral-400">Atelier Editorial Team</p>
           </div>
         </div>
       </div>
 
-      {/* Featured Cover Photo */}
-      <div className="relative aspect-16/9 rounded-3xl overflow-hidden bg-neutral-100 shadow-md">
-        <Image src={post.coverImage} alt={post.title} fill className="object-cover" priority />
+      {/* Hero Cover Image */}
+      {post.featuredImage && (
+        <div className="relative aspect-21/9 w-full rounded-3xl overflow-hidden bg-neutral-100 shadow-xs">
+          <Image src={post.featuredImage} alt={post.title} fill priority className="object-cover" />
+        </div>
+      )}
+
+      {/* Article Content */}
+      <div className="max-w-3xl mx-auto space-y-6 text-sm sm:text-base text-neutral-700 leading-relaxed font-normal">
+        {post.content ? (
+          <div
+            className="prose prose-neutral max-w-none space-y-4"
+            dangerouslySetInnerHTML={{ __html: post.content }}
+          />
+        ) : (
+          <p>{post.excerpt}</p>
+        )}
       </div>
 
-      {/* Article Content Prose */}
-      <div className="space-y-6 text-sm sm:text-base text-neutral-800 leading-relaxed max-w-none">
-        {post.content.map((paragraph, idx) => (
-          <p key={idx} className="leading-relaxed">
-            {paragraph}
-          </p>
-        ))}
-      </div>
-
-      {/* Tags */}
-      <div className="flex flex-wrap gap-2 pt-6 border-t border-neutral-100">
-        {post.tags.map((tag) => (
-          <span
-            key={tag}
-            className="px-3 py-1 bg-neutral-100 text-neutral-700 text-xs font-medium rounded-full"
-          >
-            #{tag}
-          </span>
-        ))}
-      </div>
-
-      {/* Featured Products in this Guide */}
-      {featuredProducts.length > 0 && (
+      {/* Featured Pieces in This Guide */}
+      {products.length > 0 && (
         <div className="pt-10 border-t border-neutral-200 space-y-6">
-          <h3 className="text-xl font-black text-neutral-900 tracking-tight">
-            Featured in this Guide
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
-            {featuredProducts.map((p) => (
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold text-neutral-900">Featured In This Story</h3>
+            <Link href="/shop" className="text-xs font-bold text-neutral-900 hover:underline">
+              View All Pieces &rarr;
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {products.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}
           </div>
         </div>
       )}
+
+      {/* Back to Journal Link */}
+      <div className="pt-6">
+        <Link
+          href="/blog"
+          className="inline-flex items-center gap-2 text-xs font-bold text-neutral-900 hover:underline"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Journal & Styling Guides
+        </Link>
+      </div>
     </article>
   );
 }
-

@@ -11,6 +11,11 @@
             <a href="{{ route('admin.orders') }}" class="text-slate-400 hover:text-slate-700">&larr; Back to Orders</a>
             <span class="text-slate-300">|</span>
             <span class="font-bold text-slate-900 text-sm">{{ $order->order_number }}</span>
+            @if($order->is_test)
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 uppercase">
+                TEST / SANDBOX
+            </span>
+            @endif
             <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-900 text-white">
                 {{ $order->status->label() }}
             </span>

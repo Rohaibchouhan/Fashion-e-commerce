@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Plus, Equal, Check, ShoppingBag, Sparkles, ArrowRight } from "lucide-react";
-import { FEATURED_OUTFIT_BUNDLE, OutfitItem } from "@/lib/mock-data/outfits";
+import { FEATURED_OUTFIT_BUNDLE, OutfitItem } from "@/constants/outfits";
 import { formatPrice } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { toast } from "@/components/ui/toast";
@@ -12,18 +12,18 @@ import { Modal } from "@/components/ui/modal";
 
 export const OutfitBuilder: React.FC = () => {
   const { addItem, openCart } = useCartStore();
-  const [selectedItems, setSelectedItems] = useState<string[]>(
+  const [selectedItems, setSelectedItems] = useState<(string | number)[]>(
     FEATURED_OUTFIT_BUNDLE.items.map((i) => i.id)
   );
   const [isBuilderModalOpen, setIsBuilderModalOpen] = useState(false);
-  const [itemSizes, setItemSizes] = useState<Record<string, string>>({
-    "prod-6": "M",
-    "prod-3": "32",
-    "prod-7": "L",
-    "prod-8": "42",
+  const [itemSizes, setItemSizes] = useState<Record<string | number, string>>({
+    6: "M",
+    3: "32",
+    7: "L",
+    8: "42",
   });
 
-  const toggleItemSelection = (id: string) => {
+  const toggleItemSelection = (id: string | number) => {
     if (selectedItems.includes(id)) {
       if (selectedItems.length <= 1) {
         toast.info("At least one item must remain in your look.");
@@ -44,7 +44,7 @@ export const OutfitBuilder: React.FC = () => {
   const handleAddLookToBag = () => {
     activeItems.forEach((item) => {
       addItem({
-        productId: item.id,
+        productId: String(item.id),
         slug: item.slug,
         name: item.name,
         price: item.price,

@@ -76,7 +76,9 @@ Route::prefix('v1')->group(function () {
         Route::delete('coupon', [CartController::class, 'removeCoupon']);
     });
 
-    // 5. Checkout (Guest auto-registration supported)
+    // 5. Checkout
+    Route::post('checkout/preview', [CheckoutController::class, 'preview']);
+    Route::post('checkout/quote', [CheckoutController::class, 'preview']);
     Route::post('checkout', [CheckoutController::class, 'process']);
     Route::post('checkout/process', [CheckoutController::class, 'process']);
 

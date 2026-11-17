@@ -2,7 +2,6 @@
 
 namespace App\Services\Payments;
 
-use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Support\Str;
@@ -19,10 +18,16 @@ class CodGateway implements PaymentGatewayInterface
         ];
     }
 
-    public function verifyPayment(Payment $payment, array $payload): bool
+    /**
+     * COD payments cannot be verified through public webhook endpoints.
+     * Cash collection must be verified manually by authorized delivery staff or parcel dispatch callbacks.
+     */
+    public function verifyWebhook(Payment $payment, array $payload, ?string $signature, string $rawBody): array
     {
-        // COD is verified manually by admin or courier webhook upon parcel delivery
-        return true;
+        return [
+            'verified' => false,
+            'message' => 'Cash on Delivery (COD) payments cannot be confirmed via public webhooks. Payment collection must be recorded through authorized staff or delivery confirmation.',
+        ];
     }
 
     public function processRefund(Payment $payment, float $amount, ?string $reason = null): array
@@ -34,4 +39,3 @@ class CodGateway implements PaymentGatewayInterface
         ];
     }
 }
-

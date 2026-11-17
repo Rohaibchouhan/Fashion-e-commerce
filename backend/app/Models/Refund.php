@@ -54,5 +54,20 @@ class Refund extends Model
     {
         return $this->hasMany(RefundTransaction::class);
     }
+
+    public function scopeReal($query)
+    {
+        return $query->whereHas('order', fn ($q) => $q->real());
+    }
+
+    public function scopeTest($query)
+    {
+        return $query->whereHas('order', fn ($q) => $q->test());
+    }
+
+    public function getIsTestAttribute(): bool
+    {
+        return $this->order?->is_test ?? false;
+    }
 }
 

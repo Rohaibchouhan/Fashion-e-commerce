@@ -20,6 +20,8 @@ class Order extends Model
         'order_number',
         'customer_id',
         'idempotency_key',
+        'idempotency_hash',
+        'guest_session_id',
         'status',
         'payment_status',
         'fulfillment_status',
@@ -68,6 +70,11 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(StockReservation::class);
+    }
+
     public function statusHistories(): HasMany
     {
         return $this->hasMany(OrderStatusHistory::class)->orderBy('created_at');
@@ -96,6 +103,21 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(Refund::class);
+    }
+
+    public function scopeReal($query)
+    {
+        return $query->whereDoesntHave('payments', fn ($q) => $q->where('is_test', true));
+    }
+
+    public function scopeTest($query)
+    {
+        return $query->whereHas('payments', fn ($q) => $q->where('is_test', true));
+    }
+
+    public function getIsTestAttribute(): bool
+    {
+        return (bool) $this->payments()->where('is_test', true)->exists();
     }
 
     public function getTimelineAttribute(): array

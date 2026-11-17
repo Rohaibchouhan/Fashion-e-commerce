@@ -46,12 +46,12 @@ class Coupon extends Model
 
     public function categories(): BelongsToMany
     {
-        return $this->belongsToMany(Category::class);
+        return $this->belongsToMany(Category::class, 'coupon_category');
     }
 
     public function products(): BelongsToMany
     {
-        return $this->belongsToMany(Product::class);
+        return $this->belongsToMany(Product::class, 'coupon_product');
     }
 
     public function isValidForCart(float $subtotal, ?int $userId = null): bool

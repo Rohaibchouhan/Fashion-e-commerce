@@ -463,4 +463,83 @@ class CartTest extends TestCase
 
         $this->assertEquals(0, $cart->json('data.itemsCount'));
     }
+
+    public function test_immediate_post_add_item_response_calculates_accurate_subtotal_and_totals_on_previously_loaded_cart(): void
+    {
+        $sessionId = 'immediate-total-sess-' . uniqid();
+
+        // 1. Explicitly load empty cart first (so relationship is loaded as empty collection)
+        $initialRes = $this->withHeader('X-Session-Id', $sessionId)
+            ->getJson('/api/v1/cart');
+        $initialRes->assertStatus(200);
+        $this->assertEquals(0, $initialRes->json('data.itemsCount'));
+        $this->assertEquals(0.00, (float) $initialRes->json('data.subtotal'));
+
+        // 2. Add an item via POST
+        $product = Product::first();
+        $variant = $product->variants->first();
+        $expectedUnitPrice = (float) $variant->price;
+
+        $postRes = $this->withHeader('X-Session-Id', $sessionId)
+            ->postJson('/api/v1/cart/items', [
+                'product_id' => $product->id,
+                'variant_id' => $variant->id,
+                'quantity' => 1,
+            ]);
+
+        $postRes->assertStatus(200)
+            ->assertJson(['success' => true]);
+
+        // CRITICAL REGRESSION ASSERTIONS: Immediate POST response must contain accurate subtotal and total
+        $data = $postRes->json('data');
+        $this->assertEquals(1, $data['itemsCount']);
+        $this->assertEquals($expectedUnitPrice, (float) $data['subtotal']);
+        $this->assertEquals(10.00, (float) $data['shipping']); // Under $50 threshold
+        $expectedTax = round($expectedUnitPrice * 0.08, 2);
+        $this->assertEquals($expectedTax, (float) $data['tax']);
+        $expectedTotal = round($expectedUnitPrice + 10.00 + $expectedTax, 2);
+        $this->assertEquals($expectedTotal, (float) $data['total']);
+    }
+
+    public function test_immediate_multiple_items_produce_accurate_totals_and_free_shipping(): void
+    {
+        $sessionId = 'multi-item-sess-' . uniqid();
+
+        $products = Product::with('variants')->take(2)->get();
+        $prod1 = $products[0];
+        $var1 = $prod1->variants->first();
+        $prod2 = $products[1];
+        $var2 = $prod2->variants->first();
+
+        // Add item 1 (quantity 2)
+        $this->withHeader('X-Session-Id', $sessionId)
+            ->postJson('/api/v1/cart/items', [
+                'product_id' => $prod1->id,
+                'variant_id' => $var1->id,
+                'quantity' => 2,
+            ])->assertStatus(200);
+
+        // Add item 2 (quantity 2)
+        $secondAddRes = $this->withHeader('X-Session-Id', $sessionId)
+            ->postJson('/api/v1/cart/items', [
+                'product_id' => $prod2->id,
+                'variant_id' => $var2->id,
+                'quantity' => 2,
+            ]);
+
+        $secondAddRes->assertStatus(200);
+
+        $expectedSubtotal = round(((float)$var1->price * 2) + ((float)$var2->price * 2), 2);
+        $data = $secondAddRes->json('data');
+
+        $this->assertEquals(4, $data['itemsCount']);
+        $this->assertEquals($expectedSubtotal, (float) $data['subtotal']);
+
+        // Check free shipping threshold
+        if ($expectedSubtotal >= 50.00) {
+            $this->assertEquals(0.00, (float) $data['shipping']);
+        } else {
+            $this->assertEquals(10.00, (float) $data['shipping']);
+        }
+    }
 }

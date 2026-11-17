@@ -45,7 +45,7 @@ Route::prefix('admin')->group(function () {
     if (app()->isLocal()) {
         Route::get('/dev-login', function () {
             Auth::login(App\Models\User::where('email', 'admin@wearday.com')->first());
-            return redirect(request('redirect', route('admin.users')));
+            return redirect(request('redirect', route('admin.dashboard')));
         });
     }
 });
@@ -96,6 +96,9 @@ Route::prefix('admin')->middleware(['auth', 'admin.staff'])->group(function () {
 
     // Payments & Transactions
     Route::get('/payments', [PaymentController::class, 'index'])->name('admin.payments');
+    Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('admin.payments.show');
+    Route::post('/payments/test-mode/toggle', [PaymentController::class, 'toggleTestMode'])->name('admin.payments.test_mode.toggle');
+    Route::post('/payments/test-simulate', [PaymentController::class, 'simulateTestPayment'])->name('admin.payments.simulate');
 
     // Shipping & Delivery Methods
     Route::get('/shipping', [ShippingController::class, 'index'])->name('admin.shipping');

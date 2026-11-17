@@ -42,7 +42,10 @@ class Cart extends Model
 
     public function recalculateTotals(): void
     {
-        $this->loadMissing(['items.product', 'items.variant']);
+        // Always force-reload items and relationships from the database so newly
+        // created/updated items are accounted for even if items was previously loaded empty.
+        $this->unsetRelation('items');
+        $this->load(['items.product.images', 'items.variant']);
         $subtotal = 0;
 
         foreach ($this->items as $item) {
@@ -57,9 +60,35 @@ class Cart extends Model
 
         $discount = 0;
         if ($this->coupon_code) {
-            $coupon = Coupon::where('code', $this->coupon_code)->first();
-            if ($coupon && $coupon->isValidForCart($subtotal)) {
-                $discount = $coupon->calculateDiscount($subtotal);
+            $coupon = Coupon::with(['products', 'categories'])->where('code', $this->coupon_code)->first();
+            if ($coupon) {
+                $hasProducts = $coupon->products->isNotEmpty();
+                $hasCategories = $coupon->categories->isNotEmpty();
+                $restrictedProductIds = $coupon->products->pluck('id')->all();
+                $restrictedCategoryIds = $coupon->categories->pluck('id')->all();
+
+                $eligibleSubtotal = 0.0;
+                $eligibleCount = 0;
+                foreach ($this->items as $item) {
+                    if (!$item->product) continue;
+                    $isEligible = true;
+                    if ($hasProducts || $hasCategories) {
+                        $pMatch = $hasProducts && in_array($item->product_id, $restrictedProductIds);
+                        $cMatch = $hasCategories && in_array($item->product->category_id, $restrictedCategoryIds);
+                        $isEligible = ($pMatch || $cMatch);
+                    }
+                    if ($isEligible) {
+                        $price = $item->variant ? (float)$item->variant->price : (float)$item->product->effective_price;
+                        $eligibleSubtotal += ($price * $item->quantity);
+                        $eligibleCount++;
+                    }
+                }
+
+                if ($eligibleCount > 0 && $coupon->isValidForCart($eligibleSubtotal, $this->user_id)) {
+                    $discount = $coupon->calculateDiscount($eligibleSubtotal);
+                } else {
+                    $this->coupon_code = null;
+                }
             } else {
                 $this->coupon_code = null;
             }

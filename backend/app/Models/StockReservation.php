@@ -12,6 +12,7 @@ class StockReservation extends Model
 
     protected $fillable = [
         'session_or_user_id',
+        'order_id',
         'variant_id',
         'quantity',
         'status',
@@ -26,6 +27,11 @@ class StockReservation extends Model
     public function variant(): BelongsTo
     {
         return $this->belongsTo(ProductVariant::class);
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
     }
 }
 

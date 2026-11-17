@@ -1,13 +1,14 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { MOCK_BLOGS } from "@/lib/mock-data/blogs";
+import { BlogService } from "@/services/blog.service";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ArrowRight, Clock } from "lucide-react";
 
-export default function BlogPage() {
-  const featured = MOCK_BLOGS[0];
-  const others = MOCK_BLOGS.slice(1);
+export default async function BlogPage() {
+  const blogs = await BlogService.getAll();
+  const featured = blogs[0];
+  const others = blogs.slice(1);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-12">
@@ -28,19 +29,25 @@ export default function BlogPage() {
           className="group grid grid-cols-1 lg:grid-cols-12 gap-8 items-center rounded-3xl bg-neutral-100/70 p-6 sm:p-10 border border-neutral-200/80 transition-all hover:shadow-lg"
         >
           <div className="lg:col-span-7 relative aspect-16/10 rounded-2xl overflow-hidden bg-neutral-200">
-            <Image
-              src={featured.coverImage}
-              alt={featured.title}
-              fill
-              className="object-cover group-hover:scale-105 transition-transform duration-500"
-            />
+            {featured.featuredImage ? (
+              <Image
+                src={featured.featuredImage}
+                alt={featured.title}
+                fill
+                className="object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+            ) : (
+              <div className="w-full h-full bg-neutral-200 flex items-center justify-center text-neutral-400">
+                WD Journal
+              </div>
+            )}
           </div>
           <div className="lg:col-span-5 space-y-4">
             <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-2">
-              <span>{featured.category}</span>
+              <span>{featured.category || "Styling Guides"}</span>
               <span>•</span>
               <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" /> {featured.readTime}
+                <Clock className="w-3 h-3" /> 4 min read
               </span>
             </span>
             <h2 className="text-2xl sm:text-3xl font-black text-neutral-900 tracking-tight group-hover:text-neutral-700 transition-colors">
@@ -67,16 +74,22 @@ export default function BlogPage() {
           >
             <div className="space-y-4">
               <div className="relative aspect-4/3 rounded-2xl overflow-hidden bg-neutral-100">
-                <Image
-                  src={post.coverImage}
-                  alt={post.title}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+                {post.featuredImage ? (
+                  <Image
+                    src={post.featuredImage}
+                    alt={post.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-neutral-200 flex items-center justify-center text-neutral-400">
+                    WD Journal
+                  </div>
+                )}
               </div>
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                  {post.category} • {post.readTime}
+                  {post.category || "Style"} • 4 min read
                 </span>
                 <h3 className="text-base font-bold text-neutral-900 group-hover:text-neutral-700 transition-colors mt-1">
                   {post.title}
@@ -97,4 +110,3 @@ export default function BlogPage() {
     </div>
   );
 }
-

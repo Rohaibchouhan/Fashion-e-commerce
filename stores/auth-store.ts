@@ -38,38 +38,17 @@ export const useAuthStore = create<AuthStore>()(
           const token = tokenOrName || "";
           ApiClient.setAuthToken(token);
           set({ user: userOrEmail, isAuthenticated: true, token });
-        } else {
-          const email = userOrEmail;
-          const name = tokenOrName || email.split("@")[0];
-          const dummyUser: User = {
-            id: `usr-${Date.now().toString().slice(-5)}`,
-            name,
-            email,
-            createdAt: new Date().toISOString(),
-            addresses: [],
-          };
-          const dummyToken = `token-${Date.now()}`;
-          ApiClient.setAuthToken(dummyToken);
-          set({ user: dummyUser, isAuthenticated: true, token: dummyToken });
         }
       },
 
       register: (name: string, email: string) => {
-        const dummyUser: User = {
-          id: `usr-${Date.now().toString().slice(-5)}`,
-          name,
-          email,
-          createdAt: new Date().toISOString(),
-          addresses: [],
-        };
-        const dummyToken = `token-${Date.now()}`;
-        ApiClient.setAuthToken(dummyToken);
-        set({ user: dummyUser, isAuthenticated: true, token: dummyToken });
+        // Registered users receive official credentials from API responses
       },
 
       logout: () => {
         AuthService.logout().catch(() => {});
         ApiClient.setAuthToken(null);
+        ApiClient.rotateSessionId();
         set({ user: null, isAuthenticated: false, token: null });
       },
 

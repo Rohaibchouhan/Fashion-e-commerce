@@ -66,14 +66,16 @@ class OrderService
             })
             ->where(function (Builder $q) use ($cleanCheck) {
                 $q->whereHas('customer', fn ($c) => $c->where('email', $cleanCheck))
-                    ->orWhereJsonContains('shipping_address->email', $cleanCheck)
-                    ->orWhereJsonContains('shipping_address->zipCode', $cleanCheck)
-                    ->orWhereJsonContains('shipping_address->zip_code', $cleanCheck)
-                    ->orWhereJsonContains('shipping_address->zip', $cleanCheck)
-                    ->orWhereJsonContains('shipping_address->postal_code', $cleanCheck)
-                    ->orWhereJsonContains('billing_address->email', $cleanCheck)
-                    ->orWhereJsonContains('billing_address->zipCode', $cleanCheck)
-                    ->orWhereJsonContains('billing_address->zip', $cleanCheck);
+                    ->orWhere('shipping_address->email', $cleanCheck)
+                    ->orWhere('shipping_address->zipCode', $cleanCheck)
+                    ->orWhere('shipping_address->zip_code', $cleanCheck)
+                    ->orWhere('shipping_address->zip', $cleanCheck)
+                    ->orWhere('shipping_address->postal_code', $cleanCheck)
+                    ->orWhere('shipping_address->zipCode', strtoupper($cleanCheck))
+                    ->orWhere('shipping_address->postal_code', strtoupper($cleanCheck))
+                    ->orWhere('billing_address->email', $cleanCheck)
+                    ->orWhere('billing_address->zipCode', $cleanCheck)
+                    ->orWhere('billing_address->zip', $cleanCheck);
             })
             ->first();
 
@@ -139,28 +141,46 @@ class OrderService
 
     public function cancelOrder(Order $order, string $reason, ?User $actor = null): Order
     {
-        if (in_array($order->status, [OrderStatus::DISPATCHED, OrderStatus::IN_TRANSIT, OrderStatus::OUT_FOR_DELIVERY, OrderStatus::DELIVERED])) {
-            throw new Exception("Order cannot be cancelled because it has already been dispatched. Please initiate a return instead.");
-        }
-
         return DB::transaction(function () use ($order, $reason, $actor) {
-            $prevStatus = $order->status->value;
+            // Consistent lock order: Order -> Payment -> StockReservation -> Inventory
+            $orderLocked = Order::where('id', $order->id)->lockForUpdate()->firstOrFail();
 
-            $order->update([
+            // Idempotent: if already cancelled, return existing order
+            if ($orderLocked->status === OrderStatus::CANCELLED) {
+                return $orderLocked->fresh(['items', 'statusHistories', 'payments']);
+            }
+
+            if (in_array($orderLocked->status, [OrderStatus::DISPATCHED, OrderStatus::IN_TRANSIT, OrderStatus::OUT_FOR_DELIVERY, OrderStatus::DELIVERED])) {
+                throw new Exception("Order cannot be cancelled because it has already been dispatched. Please initiate a return instead.");
+            }
+
+            // Lock payment record if present
+            \App\Models\Payment::where('order_id', $orderLocked->id)->lockForUpdate()->get();
+
+            // Authoritatively inspect locked payment status
+            $wasPaid = ($orderLocked->payment_status === PaymentStatus::PAID);
+            $prevStatus = $orderLocked->status->value;
+
+            $orderLocked->update([
                 'status' => OrderStatus::CANCELLED,
                 'cancelled_at' => now(),
                 'cancellation_reason' => $reason,
             ]);
 
-            // Restore inventory
-            $items = $order->items->map(fn ($item) => [
-                'variant_id' => $item->variant_id,
-                'quantity' => $item->quantity,
-            ])->toArray();
+            // Release any active stock reservations
+            $this->inventoryService->releaseReservationsForOrder($orderLocked->id, $reason);
 
-            $this->inventoryService->restoreStockForOrder($order->id, $items, $reason);
+            // Only restore physical inventory if the order was paid/committed (physical stock was deducted)
+            if ($wasPaid) {
+                $items = $orderLocked->items->map(fn ($item) => [
+                    'variant_id' => $item->variant_id,
+                    'quantity' => $item->quantity,
+                ])->toArray();
 
-            $order->statusHistories()->create([
+                $this->inventoryService->restoreStockForOrder($orderLocked->id, $items, $reason);
+            }
+
+            $orderLocked->statusHistories()->create([
                 'previous_status' => $prevStatus,
                 'new_status' => OrderStatus::CANCELLED->value,
                 'updated_by' => $actor?->id,
@@ -169,10 +189,10 @@ class OrderService
                 'notes' => $reason,
             ]);
 
-            event(new OrderStatusUpdatedEvent($order, $prevStatus, OrderStatus::CANCELLED->value));
+            event(new OrderStatusUpdatedEvent($orderLocked, $prevStatus, OrderStatus::CANCELLED->value));
 
-            return $order->fresh(['items', 'statusHistories', 'payments']);
-        });
+            return $orderLocked->fresh(['items', 'statusHistories', 'payments']);
+        }, 3);
     }
 }
 

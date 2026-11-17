@@ -26,6 +26,14 @@ class OrderController extends Controller
             $query->where('payment_status', $request->payment_status);
         }
 
+        if ($request->filled('type') && $request->type !== 'all') {
+            if ($request->type === 'real') {
+                $query->real();
+            } elseif ($request->type === 'test') {
+                $query->test();
+            }
+        }
+
         if ($request->filled('search')) {
             $term = trim($request->search);
             $query->where(function ($q) use ($term) {

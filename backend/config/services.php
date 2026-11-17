@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'stripe' => [
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'api_key' => env('STRIPE_SECRET_KEY'),
+    ],
+
+    'test_payment' => [
+        'enabled' => env('TEST_PAYMENT_ENABLED', false),
+        'webhook_secret' => env('TEST_PAYMENT_WEBHOOK_SECRET', 'whsec_test_payment_sandbox_key_998877'),
+    ],
+
 ];

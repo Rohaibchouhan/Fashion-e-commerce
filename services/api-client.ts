@@ -36,13 +36,15 @@ export class ApiError extends Error {
   public errors?: Record<string, string[]>;
   public isTimeout: boolean;
   public isNetworkError: boolean;
+  public data?: any;
 
   constructor(
     message: string,
     status = 500,
     errors?: Record<string, string[]>,
     isTimeout = false,
-    isNetworkError = false
+    isNetworkError = false,
+    data?: any
   ) {
     super(message);
     this.name = "ApiError";
@@ -50,6 +52,7 @@ export class ApiError extends Error {
     this.errors = errors;
     this.isTimeout = isTimeout;
     this.isNetworkError = isNetworkError;
+    this.data = data;
   }
 }
 
@@ -81,14 +84,33 @@ export class ApiClient {
     return this.token;
   }
 
+  public static generateSessionId(): string {
+    if (typeof window !== "undefined" && window.crypto && typeof window.crypto.randomUUID === "function") {
+      return "sess_" + window.crypto.randomUUID().replace(/-/g, "");
+    }
+    if (typeof window !== "undefined" && window.crypto && typeof window.crypto.getRandomValues === "function") {
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return "sess_" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    return "sess_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
+
   public static getSessionId(): string {
     if (typeof window === "undefined") return "";
     let sid = localStorage.getItem("wearday_cart_session_id");
     if (!sid) {
-      sid = "sess_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      sid = this.generateSessionId();
       localStorage.setItem("wearday_cart_session_id", sid);
     }
     return sid;
+  }
+
+  public static rotateSessionId(): string {
+    if (typeof window === "undefined") return "";
+    const newSid = this.generateSessionId();
+    localStorage.setItem("wearday_cart_session_id", newSid);
+    return newSid;
   }
 
   public static getBaseUrl(): string {
@@ -184,7 +206,7 @@ export class ApiClient {
             ? responseData.errors
             : undefined;
 
-        throw new ApiError(errorMessage, res.status, validationErrors);
+        throw new ApiError(errorMessage, res.status, validationErrors, false, false, responseData);
       }
 
       // If the response is wrapped in standard Laravel JSON { success: true, data: ..., meta: ... }
@@ -263,3 +285,6 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: "DELETE", ...options });
   }
 }
+
+export const apiClient = ApiClient;
+

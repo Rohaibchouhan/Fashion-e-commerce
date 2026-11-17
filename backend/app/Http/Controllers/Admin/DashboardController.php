@@ -21,23 +21,23 @@ class DashboardController extends Controller
     {
         $now = Carbon::now();
 
-        // Revenue calculations
-        $totalRevenue = (float) Order::where('payment_status', PaymentStatus::PAID)->sum('total');
-        $todayRevenue = (float) Order::where('payment_status', PaymentStatus::PAID)
+        // Revenue calculations (strictly isolated to real customer transactions)
+        $totalRevenue = (float) Order::real()->where('payment_status', PaymentStatus::PAID)->sum('total');
+        $todayRevenue = (float) Order::real()->where('payment_status', PaymentStatus::PAID)
             ->whereDate('created_at', $now->toDateString())
             ->sum('total');
-        $monthlyRevenue = (float) Order::where('payment_status', PaymentStatus::PAID)
+        $monthlyRevenue = (float) Order::real()->where('payment_status', PaymentStatus::PAID)
             ->whereMonth('created_at', $now->month)
             ->whereYear('created_at', $now->year)
             ->sum('total');
 
-        // Order count stats
-        $totalOrders = Order::count();
-        $pendingOrders = Order::whereIn('status', [OrderStatus::PLACED, OrderStatus::CONFIRMED])->count();
-        $processingOrders = Order::where('status', OrderStatus::PROCESSING)->count();
-        $dispatchedOrders = Order::whereIn('status', [OrderStatus::DISPATCHED, OrderStatus::IN_TRANSIT, OrderStatus::OUT_FOR_DELIVERY])->count();
-        $deliveredOrders = Order::where('status', OrderStatus::DELIVERED)->count();
-        $cancelledOrders = Order::where('status', OrderStatus::CANCELLED)->count();
+        // Order count stats (excluding test orders from production volume)
+        $totalOrders = Order::real()->count();
+        $pendingOrders = Order::real()->whereIn('status', [OrderStatus::PLACED, OrderStatus::CONFIRMED])->count();
+        $processingOrders = Order::real()->where('status', OrderStatus::PROCESSING)->count();
+        $dispatchedOrders = Order::real()->whereIn('status', [OrderStatus::DISPATCHED, OrderStatus::IN_TRANSIT, OrderStatus::OUT_FOR_DELIVERY])->count();
+        $deliveredOrders = Order::real()->where('status', OrderStatus::DELIVERED)->count();
+        $cancelledOrders = Order::real()->where('status', OrderStatus::CANCELLED)->count();
 
         // Customers
         $totalCustomers = User::whereHas('roles', fn ($q) => $q->where('slug', 'customer'))->count();
@@ -60,8 +60,8 @@ class DashboardController extends Controller
             ->limit(6)
             ->get();
 
-        // Recent orders
-        $recentOrders = Order::with(['customer', 'items'])
+        // Recent orders (strictly real customer orders)
+        $recentOrders = Order::real()->with(['customer', 'items'])
             ->latest()
             ->limit(8)
             ->get();

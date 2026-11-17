@@ -39,6 +39,15 @@ interface CartStore {
   getItemCount: () => number;
 }
 
+interface ItemUpdateQueue {
+  targetQuantity: number;
+  isProcessing: boolean;
+  version: number;
+  removed: boolean;
+}
+
+const itemQueues = new Map<string, ItemUpdateQueue>();
+
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
@@ -60,21 +69,30 @@ export const useCartStore = create<CartStore>()(
       },
 
       applyBackendCart: (backendCart: BackendCart) => {
-        const mappedItems: CartItem[] = backendCart.items.map((item) => ({
-          id: String(item.id),
-          productId: String(item.productId),
-          variantId: item.variantId ? String(item.variantId) : null,
-          sku: item.sku,
-          name: item.name,
-          slug: item.slug,
-          price: item.price,
-          quantity: item.quantity,
-          maxStock: item.maxStock,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize,
-          image: item.image,
-          subtotal: item.subtotal,
-        }));
+        const mappedItems: CartItem[] = backendCart.items.map((item) => {
+          const idStr = String(item.id);
+          const activeQueue = itemQueues.get(idStr);
+          // If this item has an in-flight quantity update in progress, preserve customer's desired target quantity
+          const effectiveQuantity = (activeQueue && activeQueue.isProcessing && !activeQueue.removed)
+            ? activeQueue.targetQuantity
+            : item.quantity;
+
+          return {
+            id: idStr,
+            productId: String(item.productId),
+            variantId: item.variantId ? String(item.variantId) : null,
+            sku: item.sku,
+            name: item.name,
+            slug: item.slug,
+            price: item.price,
+            quantity: effectiveQuantity,
+            maxStock: item.maxStock,
+            selectedColor: item.selectedColor,
+            selectedSize: item.selectedSize,
+            image: item.image,
+            subtotal: item.subtotal,
+          };
+        });
 
         set({
           items: mappedItems,
@@ -134,6 +152,13 @@ export const useCartStore = create<CartStore>()(
       },
 
       removeItem: async (id: string) => {
+        // Discard any pending or in-flight update loops for this item
+        const queue = itemQueues.get(id);
+        if (queue) {
+          queue.removed = true;
+          queue.version++;
+        }
+
         // Remove locally
         set((state) => ({
           items: state.items.filter((item) => item.id !== id),
@@ -144,7 +169,7 @@ export const useCartStore = create<CartStore>()(
           if (!isNaN(Number(id))) {
             const backendCart = await CartService.removeItem(id);
             if (backendCart) {
-              (get() as any).applyBackendCart(backendCart);
+              get().applyBackendCart(backendCart);
             }
           }
         } catch (err) {
@@ -158,27 +183,87 @@ export const useCartStore = create<CartStore>()(
           return;
         }
 
-        // Optimistic local update
+        // 1. Optimistic local update: latest customer-selected quantity wins immediately in UI
         set((state) => ({
           items: state.items.map((item) =>
             item.id === id ? { ...item, quantity: Math.min(quantity, item.maxStock || 99) } : item
           ),
         }));
 
-        // Sync with backend
+        // 2. Register/update serialized queue entry for this item
+        let queue = itemQueues.get(id);
+        if (!queue) {
+          queue = {
+            targetQuantity: quantity,
+            isProcessing: false,
+            version: 0,
+            removed: false,
+          };
+          itemQueues.set(id, queue);
+        }
+
+        queue.targetQuantity = quantity;
+        queue.removed = false;
+        queue.version++;
+
+        // If a request is already actively processing for this item, the running loop
+        // will pick up queue.targetQuantity when its current request resolves
+        if (queue.isProcessing) {
+          return;
+        }
+
+        queue.isProcessing = true;
+
+        // 3. Serialized Worker Loop: drains updates until targetQuantity equals sent quantity
         try {
-          if (!isNaN(Number(id))) {
-            const backendCart = await CartService.updateQuantity(id, quantity);
-            if (backendCart) {
-              (get() as any).applyBackendCart(backendCart);
+          while (true) {
+            if (queue.removed) break;
+
+            const qtyToSend = queue.targetQuantity;
+            const reqVersion = queue.version;
+
+            if (isNaN(Number(id))) {
+              break;
+            }
+
+            try {
+              const backendCart = await CartService.updateQuantity(id, qtyToSend);
+
+              // Only apply backend totals if no newer update was enqueued and item was not removed
+              if (!queue.removed && queue.version === reqVersion && backendCart) {
+                get().applyBackendCart(backendCart);
+              }
+            } catch (err: any) {
+              console.warn(`[useCartStore.updateQuantity] Backend error updating item ${id}:`, err);
+              // On error (e.g. stock exceeded), restore authoritative server state
+              try {
+                const freshCart = await CartService.getCart();
+                if (freshCart) {
+                  get().applyBackendCart(freshCart);
+                }
+              } catch {}
+              break;
+            }
+
+            // If targetQuantity did not change while in-flight, queue is fully settled
+            if (queue.targetQuantity === qtyToSend || queue.removed) {
+              break;
             }
           }
-        } catch (err) {
-          console.warn("[useCartStore.updateQuantity] Backend error:", err);
+        } finally {
+          queue.isProcessing = false;
+          if (queue.removed) {
+            itemQueues.delete(id);
+          }
         }
       },
 
       clearCart: async () => {
+        itemQueues.forEach((q) => {
+          q.removed = true;
+          q.version++;
+        });
+        itemQueues.clear();
         set({ items: [], coupon: null, serverSubtotal: 0, serverDiscount: 0, serverShipping: 0, serverTax: 0, serverTotal: 0 });
         try {
           await CartService.clearCart();

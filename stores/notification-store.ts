@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { Notification } from "@/types/notification";
-import { MOCK_NOTIFICATIONS } from "@/lib/mock-data/notifications";
 
 interface NotificationStore {
   notifications: Notification[];
   isOpen: boolean;
 
   // Actions
+  setNotifications: (notifs: Notification[]) => void;
   addNotification: (notif: Notification) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
@@ -19,8 +19,10 @@ interface NotificationStore {
 export const useNotificationStore = create<NotificationStore>()(
   persist(
     (set, get) => ({
-      notifications: MOCK_NOTIFICATIONS,
+      notifications: [],
       isOpen: false,
+
+      setNotifications: (notifications) => set({ notifications }),
 
       addNotification: (notif) => {
         set((state) => ({

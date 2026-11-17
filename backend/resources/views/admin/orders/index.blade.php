@@ -50,7 +50,12 @@
                 <tbody class="divide-y divide-slate-100">
                     @forelse($orders as $order)
                     <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-4 py-3 font-bold text-slate-900 font-mono">{{ $order->order_number }}</td>
+                        <td class="px-4 py-3 font-bold text-slate-900 font-mono">
+                            {{ $order->order_number }}
+                            @if($order->is_test)
+                            <span class="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-bold rounded">TEST</span>
+                            @endif
+                        </td>
                         <td class="px-4 py-3">
                             <div class="font-medium text-slate-800">{{ $order->customer->name }}</div>
                             <div class="text-[11px] text-slate-400">{{ $order->customer->email }}</div>

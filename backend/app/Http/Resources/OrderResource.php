@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,6 +15,7 @@ class OrderResource extends JsonResource
             'orderNumber' => $this->order_number,
             'date' => $this->created_at->toISOString(),
             'status' => $this->status->value,
+            'statusLabel' => $this->status->label(),
             'paymentStatus' => $this->payment_status->value,
             'fulfillmentStatus' => $this->fulfillment_status->value,
             'trackingNumber' => $this->tracking_number ?? 'Pending Allocation',
@@ -22,26 +24,33 @@ class OrderResource extends JsonResource
             'items' => $this->items->map(fn ($item) => [
                 'id' => (string) $item->id,
                 'productId' => (string) $item->product_id,
+                'variantId' => $item->variant_id ? (string) $item->variant_id : null,
                 'slug' => $item->product_slug,
                 'name' => $item->product_name,
+                'sku' => $item->product_sku,
                 'price' => (float) $item->unit_price,
                 'quantity' => (int) $item->quantity,
                 'color' => $item->selected_color ?? '',
                 'size' => $item->selected_size ?? '',
                 'image' => $item->image_url ?? '',
+                'subtotal' => (float) $item->subtotal,
+                'tax' => (float) $item->tax_amount,
+                'discount' => (float) $item->discount_amount,
+                'total' => (float) $item->total,
             ])->toArray(),
             'subtotal' => (float) $this->subtotal,
             'discount' => (float) $this->discount,
             'shipping' => (float) $this->shipping,
             'tax' => (float) $this->tax,
+            'taxRate' => (float) Setting::get('tax_rate_percentage', 8.00),
             'total' => (float) $this->total,
+            'couponCode' => $this->coupon_code,
             'shippingAddress' => $this->shipping_address,
             'billingAddress' => $this->billing_address,
             'paymentMethod' => $this->payment_method,
             'paymentLast4' => $this->payment_last4 ?? '8821',
-            'timeline' => $this->timeline,
+            'timeline' => $this->timeline ?? [],
             'notes' => $this->notes,
         ];
     }
 }
-

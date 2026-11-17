@@ -19,6 +19,7 @@ class Payment extends Model
         'amount',
         'currency',
         'status',
+        'is_test',
         'gateway_response',
         'failure_reason',
         'paid_at',
@@ -27,6 +28,7 @@ class Payment extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'status' => PaymentStatus::class,
+        'is_test' => 'boolean',
         'gateway_response' => 'array',
         'paid_at' => 'datetime',
     ];

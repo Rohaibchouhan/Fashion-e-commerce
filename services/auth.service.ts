@@ -57,6 +57,7 @@ export class AuthService {
       await ApiClient.post("/auth/logout");
     } finally {
       ApiClient.setAuthToken(null);
+      ApiClient.rotateSessionId();
     }
   }
 

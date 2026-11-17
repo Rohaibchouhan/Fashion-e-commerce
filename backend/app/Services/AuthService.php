@@ -86,40 +86,42 @@ class AuthService
         $email = strtolower(trim($customerData['email']));
         $user = User::where('email', $email)->first();
 
-        $isNew = false;
-        if (!$user) {
-            $isNew = true;
-            // Generate secure random password for auto-created checkout account
-            $randomPassword = Str::random(16);
-            $activationToken = Str::random(64);
-
-            $user = User::create([
-                'name' => trim($customerData['name']),
-                'email' => $email,
-                'phone' => $customerData['phone'] ?? null,
-                'password' => Hash::make($randomPassword),
-                'status' => 'active',
-                'activation_token' => $activationToken,
-            ]);
-
-            $customerRole = Role::where('slug', UserRole::CUSTOMER->value)->first();
-            if ($customerRole) {
-                $user->roles()->syncWithoutDetaching([$customerRole->id]);
-            }
-
-            $user->customerProfile()->create([
-                'gender' => 'unspecified',
-                'preferred_currency' => 'USD',
-                'marketing_opt_in' => true,
+        if ($user) {
+            throw ValidationException::withMessages([
+                'email' => ["An account with email '{$email}' already exists. Please sign in to complete your order."],
             ]);
         }
+
+        // Generate secure random password for auto-created checkout account
+        $randomPassword = Str::random(16);
+        $activationToken = Str::random(64);
+
+        $user = User::create([
+            'name' => trim($customerData['name']),
+            'email' => $email,
+            'phone' => $customerData['phone'] ?? null,
+            'password' => Hash::make($randomPassword),
+            'status' => 'active',
+            'activation_token' => $activationToken,
+        ]);
+
+        $customerRole = Role::where('slug', UserRole::CUSTOMER->value)->first();
+        if ($customerRole) {
+            $user->roles()->syncWithoutDetaching([$customerRole->id]);
+        }
+
+        $user->customerProfile()->create([
+            'gender' => 'unspecified',
+            'preferred_currency' => 'USD',
+            'marketing_opt_in' => true,
+        ]);
 
         $token = $user->createToken('checkout-auth-token')->plainTextToken;
 
         return [
             'user' => $user,
             'token' => $token,
-            'is_new' => $isNew,
+            'is_new' => true,
             'activation_token' => $user->activation_token,
         ];
     }

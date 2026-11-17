@@ -16,11 +16,13 @@ class PaymentTransaction extends Model
         'amount',
         'reference_id',
         'status',
+        'is_test',
         'raw_payload',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'is_test' => 'boolean',
         'raw_payload' => 'array',
     ];
 

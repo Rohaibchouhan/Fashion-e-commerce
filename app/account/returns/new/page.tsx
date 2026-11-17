@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MOCK_ORDERS } from "@/lib/mock-data/orders";
+import { OrdersService } from "@/services/orders.service";
+import { Order } from "@/types/order";
 import { RETURN_REASONS } from "@/constants";
 import { ReturnsService } from "@/services/returns.service";
 import { Input } from "@/components/ui/input";
@@ -23,14 +24,37 @@ import {
 function ReturnFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const preselectedOrderId = searchParams.get("orderId") || MOCK_ORDERS[0]?.id;
+  const preselectedOrderId = searchParams.get("orderId");
 
-  const [selectedOrderId, setSelectedOrderId] = useState(preselectedOrderId);
-  const currentOrder = MOCK_ORDERS.find((o) => o.id === selectedOrderId) || MOCK_ORDERS[0];
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(true);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>("");
 
-  const [selectedItems, setSelectedItems] = useState<string[]>(
-    currentOrder.items.length > 0 ? [currentOrder.items[0].id] : []
-  );
+  useEffect(() => {
+    let isMounted = true;
+    async function loadOrders() {
+      try {
+        const data = await OrdersService.getAll();
+        if (isMounted) {
+          setOrders(data);
+          const initialId = preselectedOrderId || data[0]?.id || "";
+          setSelectedOrderId(initialId);
+        }
+      } catch (err) {
+        console.error("Failed to load orders for return:", err);
+      } finally {
+        if (isMounted) setIsLoadingOrders(false);
+      }
+    }
+    loadOrders();
+    return () => {
+      isMounted = false;
+    };
+  }, [preselectedOrderId]);
+
+  const currentOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
+
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [returnReasons, setReturnReasons] = useState<Record<string, string>>({});
   const [returnComments, setReturnComments] = useState<Record<string, string>>({});
   const [resolution, setResolution] = useState<"refund" | "exchange">("refund");
@@ -38,8 +62,20 @@ function ReturnFormContent() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (currentOrder && currentOrder.items && currentOrder.items.length > 0) {
+      setSelectedItems([currentOrder.items[0].id]);
+    } else {
+      setSelectedItems([]);
+    }
+  }, [currentOrder?.id]);
+
   const toggleItem = (itemId: string) => {
     if (selectedItems.includes(itemId)) {
+      if (selectedItems.length === 1) {
+        toast.info("Selection Required", "Please select at least one item to return.");
+        return;
+      }
       setSelectedItems(selectedItems.filter((id) => id !== itemId));
     } else {
       setSelectedItems([...selectedItems, itemId]);
@@ -49,33 +85,38 @@ function ReturnFormContent() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setUploadedFileName(e.target.files[0].name);
-      toast.success("Image Uploaded", "Photo attachment recorded.");
+      toast.success("Photo Attached", `Attached ${e.target.files[0].name}`);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentOrder) return;
+
     if (selectedItems.length === 0) {
-      toast.error("Selection Required", "Please select at least one garment to return.");
+      toast.error("Selection Required", "Please select at least one item to return.");
       return;
+    }
+
+    // Ensure all selected items have a reason selected
+    for (const itemId of selectedItems) {
+      if (!returnReasons[itemId]) {
+        toast.error("Reason Required", "Please specify a return reason for each selected item.");
+        return;
+      }
     }
 
     try {
       setIsSubmitting(true);
-      const itemsToReturn = currentOrder.items
-        .filter((item) => selectedItems.includes(item.id))
-        .map((item) => ({
-          orderItemId: item.id,
-          productId: item.productId,
-          name: item.name,
-          color: item.color,
-          size: item.size,
-          image: item.image,
-          price: item.price,
-          quantity: item.quantity,
-          reason: (returnReasons[item.id] || "wrong_size") as any,
-          comment: returnComments[item.id] || "Standard return request",
-        }));
+      const itemsToReturn = selectedItems.map((id) => {
+        const item = currentOrder.items?.find((i) => i.id === id);
+        return {
+          order_item_id: item?.id || id,
+          quantity: item?.quantity || 1,
+          reason: returnReasons[id] || "wrong_size",
+          comment: returnComments[id] || undefined,
+        };
+      });
 
       const newReturn = await ReturnsService.createReturn({
         orderId: currentOrder.id,
@@ -85,17 +126,44 @@ function ReturnFormContent() {
         exchangeDetails: resolution === "exchange" ? exchangeDetails : undefined,
       });
 
-      toast.success("Return Authorized", `RMA #${newReturn.rmaNumber} created.`);
+      toast.success("RMA Generated", `Return #${newReturn.rmaNumber} created successfully!`);
       router.push(`/account/returns/${newReturn.id}`);
     } catch (err: any) {
-      toast.error("Error", err.message || "Failed to process return.");
+      toast.error("Submission Failed", err?.message || "Failed to submit return request.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  if (isLoadingOrders) {
+    return (
+      <div className="py-24 text-center bg-white rounded-3xl border border-neutral-200">
+        <p className="text-xs text-neutral-400">Loading order details...</p>
+      </div>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="py-24 text-center bg-white rounded-3xl border border-neutral-200 space-y-4">
+        <RotateCcw className="w-10 h-10 text-neutral-300 mx-auto" />
+        <h2 className="text-lg font-bold text-neutral-900">No Orders Available</h2>
+        <p className="text-xs text-neutral-500 max-w-sm mx-auto">
+          You don't have any orders eligible for returns at this time.
+        </p>
+        <Link
+          href="/shop"
+          className="inline-block px-5 py-2.5 bg-neutral-900 text-white text-xs font-bold rounded-full hover:bg-neutral-800 transition-colors"
+        >
+          Explore Shop
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Top Header */}
       <div className="flex items-center justify-between">
         <Link
           href="/account/returns"
@@ -105,125 +173,127 @@ function ReturnFormContent() {
         </Link>
       </div>
 
-      <div className="bg-white rounded-3xl border border-neutral-200 p-6 sm:p-8 shadow-xs">
-        <div className="border-b border-neutral-100 pb-4 mb-6">
-          <h1 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-            Start a Return or Exchange
+      <div className="bg-white rounded-3xl border border-neutral-200 p-6 sm:p-8 shadow-xs space-y-8">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+            30-Day Hassle-Free Returns
+          </span>
+          <h1 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight mt-1">
+            Initiate a Return or Size Exchange
           </h1>
           <p className="text-xs text-neutral-500 mt-1">
-            Select your order, choose items to return, and receive an instant prepaid shipping label.
+            Generate an official prepaid RMA shipping label in seconds.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* 1. Order Picker */}
-          <div className="space-y-2">
+          {/* 1. Order Selector */}
+          <div className="space-y-3">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-900 block">
               1. Select Order
             </label>
             <select
               value={selectedOrderId}
-              onChange={(e) => {
-                setSelectedOrderId(e.target.value);
-                setSelectedItems([]);
-              }}
-              className="w-full sm:w-80 h-11 px-4 text-xs font-semibold bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-neutral-900"
+              onChange={(e) => setSelectedOrderId(e.target.value)}
+              className="w-full h-11 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-900"
             >
-              {MOCK_ORDERS.map((o) => (
+              {orders.map((o) => (
                 <option key={o.id} value={o.id}>
-                  Order #{o.orderNumber} ({formatPrice(o.total)})
+                  Order #{o.orderNumber} — Total: {formatPrice(o.total)} ({o.items?.length || 0} items)
                 </option>
               ))}
             </select>
           </div>
 
-          {/* 2. Items Selection */}
-          <div className="space-y-3">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-900 block">
-              2. Select Garments to Return
-            </label>
-            <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-2xl overflow-hidden">
-              {currentOrder.items.map((item) => {
-                const isSelected = selectedItems.includes(item.id);
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`p-4 transition-colors ${
-                      isSelected ? "bg-neutral-50/80" : "bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleItem(item.id)}
-                        className="mt-1 w-4 h-4 rounded text-neutral-900 accent-neutral-900 cursor-pointer"
-                      />
-                      <div className="relative w-14 h-18 rounded-xl overflow-hidden bg-neutral-100 shrink-0">
-                        <Image src={item.image} alt={item.name} fill className="object-cover" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-xs font-bold text-neutral-900">{item.name}</h4>
-                        <p className="text-[11px] text-neutral-500">
-                          {item.color} • Size {item.size} • Qty {item.quantity}
-                        </p>
-                        <p className="text-xs font-bold text-neutral-900 mt-1">
-                          {formatPrice(item.price)}
-                        </p>
-
-                        {/* If checked, show reason dropdown and notes */}
-                        {isSelected && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-neutral-200">
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-neutral-600 uppercase">
-                                Reason for Return *
-                              </label>
-                              <select
-                                value={returnReasons[item.id] || "wrong_size"}
-                                onChange={(e) =>
-                                  setReturnReasons({ ...returnReasons, [item.id]: e.target.value })
-                                }
-                                className="w-full h-9 px-3 text-xs bg-white border border-neutral-300 rounded-lg focus:outline-none"
-                              >
-                                {RETURN_REASONS.map((r) => (
-                                  <option key={r.value} value={r.value}>
-                                    {r.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-neutral-600 uppercase">
-                                Specific Notes / Fit Feedback
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="e.g. Sleeves were 1 inch too long"
-                                value={returnComments[item.id] || ""}
-                                onChange={(e) =>
-                                  setReturnComments({ ...returnComments, [item.id]: e.target.value })
-                                }
-                                className="w-full h-9 px-3 text-xs bg-white border border-neutral-300 rounded-lg focus:outline-none"
-                              />
-                            </div>
+          {/* 2. Items Checklist */}
+          {currentOrder && currentOrder.items && currentOrder.items.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-neutral-900 block">
+                2. Select Items to Return
+              </label>
+              <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-2xl overflow-hidden">
+                {currentOrder.items.map((item) => {
+                  const isChecked = selectedItems.includes(item.id);
+                  return (
+                    <div key={item.id} className="p-4 sm:p-5 space-y-3 bg-white">
+                      <div className="flex items-center justify-between gap-4">
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleItem(item.id)}
+                            className="w-4 h-4 rounded text-neutral-900 focus:ring-neutral-900"
+                          />
+                          <div className="relative w-12 h-14 rounded-lg overflow-hidden bg-neutral-100 shrink-0">
+                            {item.image ? (
+                              <Image src={item.image} alt={item.name} fill className="object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-neutral-200 flex items-center justify-center text-xs text-neutral-400">
+                                WD
+                              </div>
+                            )}
                           </div>
-                        )}
+                          <div className="text-xs">
+                            <p className="font-bold text-neutral-900">{item.name}</p>
+                            <p className="text-[11px] text-neutral-500">
+                              {item.color} • {item.size} • Qty {item.quantity}
+                            </p>
+                          </div>
+                        </label>
+                        <p className="text-xs font-bold text-neutral-900">{formatPrice(item.price)}</p>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* 3. Resolution (Refund vs Exchange) */}
+                      {isChecked && (
+                        <div className="pt-3 border-t border-neutral-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1">
+                              Reason for Return *
+                            </label>
+                            <select
+                              value={returnReasons[item.id] || ""}
+                              onChange={(e) =>
+                                setReturnReasons({ ...returnReasons, [item.id]: e.target.value })
+                              }
+                              required
+                              className="w-full h-9 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs"
+                            >
+                              <option value="">Select a reason...</option>
+                              {RETURN_REASONS.map((r) => (
+                                <option key={r.value} value={r.value}>
+                                  {r.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1">
+                              Specific Notes (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Sleeves are slightly too long"
+                              value={returnComments[item.id] || ""}
+                              onChange={(e) =>
+                                setReturnComments({ ...returnComments, [item.id]: e.target.value })
+                              }
+                              className="w-full h-9 px-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 3. Resolution Method */}
           <div className="space-y-3">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-900 block">
-              3. Desired Resolution
+              3. Preferred Resolution
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label
                 className={`p-4 rounded-2xl border flex items-center gap-3 cursor-pointer transition-all ${
                   resolution === "refund"
@@ -330,4 +400,3 @@ export default function NewReturnPage() {
     </Suspense>
   );
 }
-

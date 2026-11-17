@@ -1,5 +1,5 @@
 export interface OutfitItem {
-  id: string;
+  id: string | number;
   name: string;
   price: number;
   image: string;
@@ -15,7 +15,7 @@ export interface OutfitBundle {
   subtitle: string;
   tagline: string;
   items: OutfitItem[];
-  bundleDiscountPercent: number; // e.g. 10% bundle discount
+  bundleDiscountPercent: number;
 }
 
 export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
@@ -26,9 +26,9 @@ export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
   bundleDiscountPercent: 10,
   items: [
     {
-      id: "prod-6",
+      id: 6,
       name: "Essential Tee",
-      price: 19.99,
+      price: 22.0,
       image: "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=500&auto=format&fit=crop&q=80",
       slug: "essential-tee",
       category: "T-Shirts",
@@ -36,9 +36,9 @@ export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
       size: "M",
     },
     {
-      id: "prod-3",
-      name: "Chino Pants",
-      price: 39.99,
+      id: 3,
+      name: "Easy Chino Pants",
+      price: 49.99,
       image: "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=500&auto=format&fit=crop&q=80",
       slug: "easy-chino-pants",
       category: "Pants",
@@ -46,9 +46,9 @@ export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
       size: "32",
     },
     {
-      id: "prod-7",
+      id: 7,
       name: "Overshirt",
-      price: 49.99,
+      price: 55.0,
       image: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500&auto=format&fit=crop&q=80",
       slug: "overshirt",
       category: "Jackets",
@@ -56,9 +56,9 @@ export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
       size: "L",
     },
     {
-      id: "prod-8",
+      id: 8,
       name: "Clean Sneakers",
-      price: 69.99,
+      price: 89.99,
       image: "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=500&auto=format&fit=crop&q=80",
       slug: "clean-sneakers",
       category: "Shoes",
@@ -67,4 +67,3 @@ export const FEATURED_OUTFIT_BUNDLE: OutfitBundle = {
     },
   ],
 };
-

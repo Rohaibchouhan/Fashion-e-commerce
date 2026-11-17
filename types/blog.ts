@@ -18,3 +18,7 @@ export interface BlogPost {
   featuredProductSlugs?: string[];
 }
 
+
+
+
+

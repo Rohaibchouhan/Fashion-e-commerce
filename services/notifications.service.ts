@@ -1,19 +1,29 @@
 import { Notification } from "@/types/notification";
-import { MOCK_NOTIFICATIONS } from "@/lib/mock-data/notifications";
+import { apiClient } from "./api-client";
 
 export class NotificationsService {
   static async getAll(): Promise<Notification[]> {
-    await new Promise((r) => setTimeout(r, 80));
-    return [...MOCK_NOTIFICATIONS];
+    try {
+      const res = await apiClient.get<Notification[]>("/notifications");
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      return [];
+    }
   }
 
   static async markAsRead(id: string): Promise<void> {
-    const notif = MOCK_NOTIFICATIONS.find((n) => n.id === id);
-    if (notif) notif.read = true;
+    try {
+      await apiClient.post(`/notifications/${id}/read`);
+    } catch {
+      // Ignore network errors on background notification ack
+    }
   }
 
   static async markAllAsRead(): Promise<void> {
-    MOCK_NOTIFICATIONS.forEach((n) => (n.read = true));
+    try {
+      await apiClient.post("/notifications/read-all");
+    } catch {
+      // Ignore
+    }
   }
 }
-

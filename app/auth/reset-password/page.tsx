@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -10,8 +10,12 @@ import { AuthService } from "@/services/auth.service";
 import { Lock, CheckCircle2 } from "lucide-react";
 import { APP_CONFIG } from "@/constants";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") || "";
+  const email = searchParams.get("email") || "";
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -30,7 +34,7 @@ export default function ResetPasswordPage() {
 
     try {
       setIsLoading(true);
-      await AuthService.resetPassword("mock-token", password);
+      await AuthService.resetPassword(token, password, email);
       setSuccess(true);
       toast.success("Password Updated", "You can now log in with your new password.");
     } catch (err: any) {
@@ -49,47 +53,53 @@ export default function ResetPasswordPage() {
           </Link>
           <h2 className="text-xl font-bold text-neutral-900">Set New Password</h2>
           <p className="text-xs text-neutral-500">
-            Create a secure password for your WearDay account.
+            Choose a strong password to protect your account.
           </p>
         </div>
 
         {success ? (
-          <div className="py-6 text-center space-y-4">
-            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-7 h-7" />
+          <div className="text-center space-y-4 py-4">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-bold text-neutral-900">Password Changed Successfully</h3>
-            <p className="text-xs text-neutral-600 max-w-xs mx-auto">
-              Your password has been securely updated. Please sign in to proceed.
+            <h3 className="text-base font-bold text-neutral-900">Password Changed</h3>
+            <p className="text-xs text-neutral-500">
+              Your password has been securely reset. You can now access your account.
             </p>
-            <Link
-              href="/auth/login"
-              className="inline-block px-8 py-3 bg-neutral-900 text-white rounded-full text-xs font-bold hover:bg-neutral-800"
-            >
-              Sign In Now
-            </Link>
+            <Button onClick={() => router.push("/auth/login")} className="w-full h-11 rounded-full">
+              Proceed to Sign In
+            </Button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="New Password *"
+              label="New Password"
               type="password"
-              placeholder="At least 8 characters"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              helperText="Minimum 8 characters with numbers and symbols"
               required
             />
+
             <Input
-              label="Confirm New Password *"
+              label="Confirm New Password"
               type="password"
-              placeholder="Re-enter your password"
+              placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
             />
-            <Button type="submit" isLoading={isLoading} className="w-full h-12 rounded-full font-bold text-xs mt-2">
+
+            <Button type="submit" isLoading={isLoading} className="w-full h-11 rounded-full">
               Update Password
             </Button>
+
+            <div className="text-center pt-2">
+              <Link href="/auth/login" className="text-xs font-semibold text-neutral-600 hover:underline">
+                Remember your password? Sign in
+              </Link>
+            </div>
           </form>
         )}
       </div>
@@ -97,3 +107,10 @@ export default function ResetPasswordPage() {
   );
 }
 
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-xs text-neutral-400">Loading form...</div>}>
+      <ResetPasswordContent />
+    </Suspense>
+  );
+}

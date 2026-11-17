@@ -1,96 +1,217 @@
 import { Address } from "@/types/auth";
 import { CartItem } from "@/types/cart";
 import { Order } from "@/types/order";
-import { MOCK_ORDERS } from "@/lib/mock-data/orders";
+import { apiClient } from "./api-client";
+import { useAuthStore } from "@/stores/auth-store";
+
+export interface CheckoutQuoteItem {
+  productId: string;
+  variantId: string | null;
+  name: string;
+  sku: string;
+  slug: string;
+  color?: string;
+  size?: string;
+  image?: string;
+  unitPrice: number;
+  quantity: number;
+  subtotal: number;
+  availableStock: number;
+}
+
+export interface CheckoutQuote {
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  shippingMethodId: string;
+  shippingMethodName: string;
+  estimatedDays: number;
+  tax: number;
+  taxRate: number;
+  total: number;
+  couponCode?: string | null;
+  items: CheckoutQuoteItem[];
+}
+
+export interface PreviewQuotePayload {
+  items: CartItem[];
+  shippingMethodId?: string;
+  couponCode?: string;
+  shippingAddress?: Partial<Address>;
+}
 
 export interface CreateOrderPayload {
   items: CartItem[];
-  shippingAddress: Address;
-  billingAddress: Address;
+  shippingAddressId?: string | number;
+  shippingAddress?: Address;
+  billingSameAsShipping?: boolean;
+  billingAddressId?: string | number;
+  billingAddress?: Address;
   shippingMethodId: string;
   paymentMethod: {
     type: "card" | "apple_pay" | "paypal";
     cardNumber?: string;
     expDate?: string;
     cvv?: string;
+    nameOnCard?: string;
   };
   couponCode?: string;
-  subtotal: number;
-  discount: number;
-  shipping: number;
-  tax: number;
-  total: number;
+  notes?: string;
+  idempotencyKey?: string;
   autoRegister?: {
     email: string;
     name: string;
+    phone?: string;
   };
 }
 
 export class CheckoutService {
-  static async processOrder(payload: CreateOrderPayload): Promise<Order> {
-    await new Promise((r) => setTimeout(r, 600));
-
-    const newOrderNumber = `WD-${Math.floor(10000 + Math.random() * 90000)}`;
-    const newOrderId = `ord-${Date.now().toString().slice(-6)}`;
-
-    const newOrder: Order = {
-      id: newOrderId,
-      orderNumber: newOrderNumber,
-      date: new Date().toISOString(),
-      status: "placed",
-      paymentStatus: "paid",
-      fulfillmentStatus: "unfulfilled",
-      trackingNumber: "Pending Allocation",
-      carrier: payload.shippingMethodId === "express" ? "FedEx Express" : "Standard Ground",
-      estimatedDelivery: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  /**
+   * Fetch an authoritative live quote from the Laravel backend.
+   */
+  static async getQuote(payload: PreviewQuotePayload): Promise<CheckoutQuote> {
+    const formattedPayload = {
       items: payload.items.map((item) => ({
-        id: `item-${Math.random().toString(36).substring(2, 7)}`,
         productId: item.productId,
-        slug: item.slug,
-        name: item.name,
-        price: item.price,
+        variantId: item.variantId || null,
+        product_id: item.productId,
+        variant_id: item.variantId || null,
         quantity: item.quantity,
         color: item.selectedColor,
         size: item.selectedSize,
-        image: item.image,
       })),
-      subtotal: payload.subtotal,
-      discount: payload.discount,
-      shipping: payload.shipping,
-      tax: payload.tax,
-      total: payload.total,
-      shippingAddress: payload.shippingAddress,
-      billingAddress: payload.billingAddress,
-      paymentMethod:
-        payload.paymentMethod.type === "apple_pay"
-          ? "Apple Pay"
-          : payload.paymentMethod.type === "paypal"
-          ? "PayPal"
-          : `Visa ending in ${payload.paymentMethod.cardNumber?.slice(-4) || "8821"}`,
-      paymentLast4: payload.paymentMethod.cardNumber?.slice(-4) || "8821",
-      timeline: [
-        {
-          status: "placed",
-          label: "Order Placed",
-          description: "Thank you for your order. We are validating payment.",
-          timestamp: new Date().toISOString(),
-          completed: true,
-          current: true,
-        },
-        { status: "confirmed", label: "Order Confirmed", description: "Pending confirmation", timestamp: "", completed: false },
-        { status: "processing", label: "Processing", description: "Pending processing", timestamp: "", completed: false },
-        { status: "packed", label: "Packed", description: "Pending packing", timestamp: "", completed: false },
-        { status: "dispatched", label: "Dispatched", description: "Pending dispatch", timestamp: "", completed: false },
-        { status: "in_transit", label: "In Transit", description: "Pending transit", timestamp: "", completed: false },
-        { status: "out_for_delivery", label: "Out for Delivery", description: "Pending delivery", timestamp: "", completed: false },
-        { status: "delivered", label: "Delivered", description: "Pending receipt", timestamp: "", completed: false },
-      ],
+      shippingMethodId: payload.shippingMethodId || "standard",
+      shipping_method_id: payload.shippingMethodId || "standard",
+      couponCode: payload.couponCode || null,
+      coupon_code: payload.couponCode || null,
+      shippingAddress: payload.shippingAddress
+        ? {
+            firstName: payload.shippingAddress.firstName,
+            lastName: payload.shippingAddress.lastName,
+            street: payload.shippingAddress.street,
+            city: payload.shippingAddress.city,
+            state: payload.shippingAddress.state,
+            zipCode: payload.shippingAddress.zipCode,
+            country: payload.shippingAddress.country || "United States",
+          }
+        : undefined,
     };
 
-    // Prepend to mock orders list so it appears in Dashboard and Tracking immediately
-    MOCK_ORDERS.unshift(newOrder);
+    const res = await apiClient.post<CheckoutQuote>("/checkout/preview", formattedPayload);
+    if (res.data) {
+      return res.data;
+    }
 
-    return newOrder;
+    throw new Error("Failed to calculate checkout quote.");
+  }
+
+  /**
+   * Submit the order to Laravel with authoritative validation and inventory reservation.
+   */
+  static async processOrder(payload: CreateOrderPayload): Promise<Order> {
+    // Generate unique idempotency key if not provided
+    const idempotencyKey =
+      payload.idempotencyKey ||
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+
+    const formattedPayload: Record<string, any> = {
+      idempotency_key: idempotencyKey,
+      items: payload.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId || null,
+        product_id: item.productId,
+        variant_id: item.variantId || null,
+        quantity: item.quantity,
+        color: item.selectedColor,
+        size: item.selectedSize,
+      })),
+      shipping_method_id: payload.shippingMethodId,
+      shippingMethodId: payload.shippingMethodId,
+      payment_method: payload.paymentMethod.type,
+      paymentMethod: payload.paymentMethod,
+      coupon_code: payload.couponCode || null,
+      couponCode: payload.couponCode || null,
+      notes: payload.notes || null,
+    };
+
+    // Shipping address handling: either saved ID or full payload
+    if (payload.shippingAddressId) {
+      formattedPayload.shipping_address_id = Number(payload.shippingAddressId);
+    } else if (payload.shippingAddress) {
+      formattedPayload.shippingAddress = {
+        firstName: payload.shippingAddress.firstName,
+        lastName: payload.shippingAddress.lastName,
+        first_name: payload.shippingAddress.firstName,
+        last_name: payload.shippingAddress.lastName,
+        street: payload.shippingAddress.street,
+        apartment: payload.shippingAddress.apartment || "",
+        city: payload.shippingAddress.city,
+        state: payload.shippingAddress.state,
+        zipCode: payload.shippingAddress.zipCode,
+        postal_code: payload.shippingAddress.zipCode,
+        country: payload.shippingAddress.country || "United States",
+        phone: payload.shippingAddress.phone || "",
+        email: (payload.shippingAddress as any).email || payload.autoRegister?.email || "",
+      };
+    }
+
+    // Billing address handling
+    formattedPayload.billing_same_as_shipping = payload.billingSameAsShipping ?? true;
+    if (!formattedPayload.billing_same_as_shipping) {
+      if (payload.billingAddressId) {
+        formattedPayload.billing_address_id = Number(payload.billingAddressId);
+      } else if (payload.billingAddress) {
+        formattedPayload.billingAddress = {
+          firstName: payload.billingAddress.firstName,
+          lastName: payload.billingAddress.lastName,
+          street: payload.billingAddress.street,
+          apartment: payload.billingAddress.apartment || "",
+          city: payload.billingAddress.city,
+          state: payload.billingAddress.state,
+          zipCode: payload.billingAddress.zipCode,
+          country: payload.billingAddress.country || "United States",
+          phone: payload.billingAddress.phone || "",
+        };
+      }
+    }
+
+    // Customer Auto-registration if unauthenticated
+    if (payload.autoRegister) {
+      formattedPayload.autoRegister = payload.autoRegister;
+      formattedPayload.customer = {
+        name: payload.autoRegister.name,
+        email: payload.autoRegister.email,
+        phone: payload.autoRegister.phone || "",
+      };
+    }
+
+    try {
+      const res = await apiClient.post<{ order: Order; token?: string; user?: any }>(
+        "/checkout/process",
+        formattedPayload,
+        {
+          headers: {
+            "X-Idempotency-Key": idempotencyKey,
+            "Idempotency-Key": idempotencyKey,
+          },
+        }
+      );
+
+      // If server created a new customer account or refreshed auth, sync with auth store
+      if (res.data?.token && res.data?.user) {
+        useAuthStore.getState().setAuth(res.data.user, res.data.token);
+      }
+
+      if (res.data?.order) {
+        return res.data.order;
+      }
+    } catch (err: any) {
+      console.warn("Backend checkout API error:", err?.message || err);
+      throw err;
+    }
+
+    throw new Error("Failed to process order.");
   }
 }
-

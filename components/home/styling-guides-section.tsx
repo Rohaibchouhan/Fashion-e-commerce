@@ -1,12 +1,34 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { MOCK_BLOGS } from "@/lib/mock-data/blogs";
+import { BlogService, BlogPostData } from "@/services/blog.service";
 
 export const StylingGuidesSection: React.FC = () => {
+  const [guides, setGuides] = useState<BlogPostData[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadGuides() {
+      try {
+        const data = await BlogService.getAll();
+        if (isMounted) setGuides(data.slice(0, 3));
+      } catch (err) {
+        console.error("Failed to load styling guides:", err);
+      }
+    }
+    loadGuides();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (guides.length === 0) {
+    return null;
+  }
+
   return (
     <section className="py-10 sm:py-14 bg-neutral-50/60 border-y border-neutral-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -27,7 +49,7 @@ export const StylingGuidesSection: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {MOCK_BLOGS.slice(0, 3).map((guide) => (
+          {guides.map((guide) => (
             <Link
               key={guide.id}
               href={`/blog/${guide.slug}`}
@@ -35,16 +57,22 @@ export const StylingGuidesSection: React.FC = () => {
             >
               <div className="space-y-4">
                 <div className="relative aspect-4/3 w-full rounded-2xl overflow-hidden bg-neutral-100">
-                  <Image
-                    src={guide.coverImage}
-                    alt={guide.title}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
+                  {guide.featuredImage ? (
+                    <Image
+                      src={guide.featuredImage}
+                      alt={guide.title}
+                      fill
+                      className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-neutral-200 flex items-center justify-center text-xs text-neutral-400">
+                      WD Style
+                    </div>
+                  )}
                 </div>
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                    {guide.category} • {guide.readTime}
+                    {guide.category || "Style"} • 4 min read
                   </span>
                   <h3 className="text-base font-bold text-neutral-900 group-hover:text-neutral-700 transition-colors mt-1">
                     {guide.title}
@@ -68,4 +96,3 @@ export const StylingGuidesSection: React.FC = () => {
     </section>
   );
 };
-

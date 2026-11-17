@@ -27,8 +27,10 @@ export interface TimelineEvent {
 export interface OrderItem {
   id: string;
   productId: string;
+  variantId?: string | null;
   slug: string;
   name: string;
+  sku?: string;
   price: number;
   quantity: number;
   color: string;
