@@ -40,6 +40,17 @@ class CouponSeeder extends Seeder
             'usage_limit_per_customer' => 1,
             'is_active' => true,
         ]);
+
+        Coupon::firstOrCreate(['code' => 'WEARDAY15'], [
+            'description' => '15% off orders over $40',
+            'type' => 'percentage',
+            'value' => 15.00,
+            'min_spend' => 40.00,
+            'max_discount' => 50.00,
+            'usage_limit_total' => 1000,
+            'usage_limit_per_customer' => 5,
+            'is_active' => true,
+        ]);
     }
 }
 

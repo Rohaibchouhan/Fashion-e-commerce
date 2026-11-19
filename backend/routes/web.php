@@ -36,10 +36,16 @@ Route::get('/api/documentation', function () {
     return view('swagger');
 })->name('api.documentation');
 
+// Password Reset Redirect to Next.js Frontend
+Route::get('/reset-password/{token}', function (Illuminate\Http\Request $request, string $token) {
+    $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
+    return redirect("{$frontendUrl}/auth/reset-password?token={$token}&email=" . urlencode((string) $request->query('email')));
+})->name('password.reset');
+
 // Admin Authentication (Public)
 Route::prefix('admin')->group(function () {
     Route::get('/login', [AdminAuthController::class, 'showLogin'])->name('admin.login');
-    Route::post('/login', [AdminAuthController::class, 'login'])->name('admin.login.submit');
+    Route::post('/login', [AdminAuthController::class, 'login'])->name('admin.login.submit')->middleware('throttle:auth.login');
     Route::post('/logout', [AdminAuthController::class, 'logout'])->name('admin.logout');
 
     if (app()->isLocal()) {
@@ -50,8 +56,8 @@ Route::prefix('admin')->group(function () {
     }
 });
 
-// Protected Admin Portal (Requires Auth + Admin Staff Role)
-Route::prefix('admin')->middleware(['auth', 'admin.staff'])->group(function () {
+// Protected Admin Portal (Requires Auth + Active User + Admin Staff Role)
+Route::prefix('admin')->middleware(['auth', 'active.user', 'admin.staff'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('admin.dashboard');
     Route::get('/dashboard', fn () => redirect()->route('admin.dashboard'));
 
@@ -89,14 +95,14 @@ Route::prefix('admin')->middleware(['auth', 'admin.staff'])->group(function () {
     Route::get('/inventory/movements', [InventoryController::class, 'movements'])->name('admin.inventory.movements');
 
     // Orders & Tracking
-    Route::get('/orders', [OrderController::class, 'index'])->name('admin.orders');
-    Route::get('/orders/{order}', [OrderController::class, 'show'])->name('admin.orders.show');
-    Route::post('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('admin.orders.status');
-    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel'])->name('admin.orders.cancel');
+    Route::get('/orders', [OrderController::class, 'index'])->name('admin.orders')->middleware('permission:orders.view');
+    Route::get('/orders/{order}', [OrderController::class, 'show'])->name('admin.orders.show')->middleware('permission:orders.view');
+    Route::post('/orders/{order}/status', [OrderController::class, 'updateStatus'])->name('admin.orders.status')->middleware('permission:orders.update_status');
+    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel'])->name('admin.orders.cancel')->middleware('permission:orders.cancel');
 
     // Payments & Transactions
-    Route::get('/payments', [PaymentController::class, 'index'])->name('admin.payments');
-    Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('admin.payments.show');
+    Route::get('/payments', [PaymentController::class, 'index'])->name('admin.payments')->middleware('permission:payments.view');
+    Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('admin.payments.show')->middleware('permission:payments.view');
     Route::post('/payments/test-mode/toggle', [PaymentController::class, 'toggleTestMode'])->name('admin.payments.test_mode.toggle');
     Route::post('/payments/test-simulate', [PaymentController::class, 'simulateTestPayment'])->name('admin.payments.simulate');
 
@@ -113,7 +119,8 @@ Route::prefix('admin')->middleware(['auth', 'admin.staff'])->group(function () {
     Route::post('/returns/{return}/refund', [ReturnController::class, 'refund'])->name('admin.returns.refund');
 
     // Refunds
-    Route::get('/refunds', [RefundController::class, 'index'])->name('admin.refunds');
+    Route::get('/refunds', [RefundController::class, 'index'])->name('admin.refunds')->middleware('permission:payments.view');
+    Route::post('/refunds/{refund}/retry', [RefundController::class, 'retry'])->name('admin.refunds.retry')->middleware('permission:refunds.retry');
 
     // Customers
     Route::get('/customers', [CustomerController::class, 'index'])->name('admin.customers');
@@ -145,17 +152,19 @@ Route::prefix('admin')->middleware(['auth', 'admin.staff'])->group(function () {
     Route::get('/settings', [SettingController::class, 'index'])->name('admin.settings');
     Route::post('/settings', [SettingController::class, 'update'])->name('admin.settings.update');
 
-    // Admin Users & Roles
-    Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users');
-    Route::get('/users/create', [AdminUserController::class, 'create'])->name('admin.users.create');
-    Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
-    Route::get('/users/{user}', [AdminUserController::class, 'show'])->name('admin.users.show');
-    Route::get('/users/{user}/edit', [AdminUserController::class, 'edit'])->name('admin.users.edit');
-    Route::post('/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
-    Route::put('/users/{user}', [AdminUserController::class, 'update']);
-    Route::post('/users/{user}/toggle', [AdminUserController::class, 'toggleStatus'])->name('admin.users.toggle');
-    Route::match(['post', 'delete'], '/users/{user}/delete', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
-    Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+    // Admin Users & Roles (Requires admin_users.manage permission)
+    Route::middleware('permission:admin_users.manage')->group(function () {
+        Route::get('/users', [AdminUserController::class, 'index'])->name('admin.users');
+        Route::get('/users/create', [AdminUserController::class, 'create'])->name('admin.users.create');
+        Route::post('/users', [AdminUserController::class, 'store'])->name('admin.users.store');
+        Route::get('/users/{user}', [AdminUserController::class, 'show'])->name('admin.users.show');
+        Route::get('/users/{user}/edit', [AdminUserController::class, 'edit'])->name('admin.users.edit');
+        Route::post('/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
+        Route::put('/users/{user}', [AdminUserController::class, 'update']);
+        Route::post('/users/{user}/toggle', [AdminUserController::class, 'toggleStatus'])->name('admin.users.toggle');
+        Route::match(['post', 'delete'], '/users/{user}/delete', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
+        Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+    });
 
     // Email Delivery Audit Logs
     Route::get('/email-logs', [EmailLogController::class, 'index'])->name('admin.email_logs');

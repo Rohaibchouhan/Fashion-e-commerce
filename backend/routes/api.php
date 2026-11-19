@@ -26,12 +26,12 @@ Route::prefix('v1')->group(function () {
 
     // 1. Authentication & Password Flow
     Route::prefix('auth')->group(function () {
-        Route::post('register', [AuthController::class, 'register']);
-        Route::post('login', [AuthController::class, 'login']);
-        Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-        Route::post('reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('register', [AuthController::class, 'register'])->middleware('throttle:auth.register');
+        Route::post('login', [AuthController::class, 'login'])->middleware('throttle:auth.login');
+        Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:auth.forgot-password');
+        Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:auth.reset-password');
 
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'active.user'])->group(function () {
             Route::post('logout', [AuthController::class, 'logout']);
             Route::get('me', [AuthController::class, 'user']);
             Route::put('profile', [AuthController::class, 'updateProfile']);
@@ -56,7 +56,7 @@ Route::prefix('v1')->group(function () {
 
         // Product Reviews
         Route::get('{productId}/reviews', [ReviewController::class, 'index']);
-        Route::post('{productId}/reviews', [ReviewController::class, 'store'])->middleware('auth:sanctum');
+        Route::post('{productId}/reviews', [ReviewController::class, 'store'])->middleware(['auth:sanctum', 'active.user']);
     });
 
     // 3. Categories
@@ -90,7 +90,7 @@ Route::prefix('v1')->group(function () {
         Route::get('{orderNumber}/poll', [OrderController::class, 'poll']);
 
         // Authenticated Customer Orders
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'active.user'])->group(function () {
             Route::get('/', [OrderController::class, 'index']);
             Route::get('{orderIdentifier}', [OrderController::class, 'show']);
             Route::post('{orderNumber}/cancel', [OrderController::class, 'cancel']);
@@ -98,14 +98,14 @@ Route::prefix('v1')->group(function () {
     });
 
     // 7. Returns & Refunds (Customer Account)
-    Route::prefix('returns')->middleware('auth:sanctum')->group(function () {
+    Route::prefix('returns')->middleware(['auth:sanctum', 'active.user'])->group(function () {
         Route::get('/', [ReturnController::class, 'index']);
         Route::post('/', [ReturnController::class, 'store']);
         Route::get('{rmaNumber}', [ReturnController::class, 'show']);
     });
 
     // 8. Wishlist
-    Route::prefix('wishlist')->middleware('auth:sanctum')->group(function () {
+    Route::prefix('wishlist')->middleware(['auth:sanctum', 'active.user'])->group(function () {
         Route::get('/', [WishlistController::class, 'index']);
         Route::post('/', [WishlistController::class, 'add']);
         Route::delete('{productId}', [WishlistController::class, 'remove']);
@@ -113,7 +113,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // 9. Notifications
-    Route::prefix('notifications')->middleware('auth:sanctum')->group(function () {
+    Route::prefix('notifications')->middleware(['auth:sanctum', 'active.user'])->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
         Route::get('unread-count', [NotificationController::class, 'unreadCount']);
         Route::post('{id}/read', [NotificationController::class, 'markAsRead']);
@@ -138,8 +138,8 @@ Route::prefix('v1')->group(function () {
     // 12. Payment Gateway Webhook Callback
     Route::post('payments/webhook/{gateway}', [PaymentWebhookController::class, 'handle']);
 
-    // 13. Administrative User & Staff Management (Sanctum + Admin Staff)
-    Route::prefix('admin/users')->middleware(['auth:sanctum', 'admin.staff'])->group(function () {
+    // 13. Administrative User & Staff Management (Sanctum + Active User + Admin Users Manage Permission)
+    Route::prefix('admin/users')->middleware(['auth:sanctum', 'active.user', 'permission:admin_users.manage'])->group(function () {
         Route::get('/', [AdminUserController::class, 'index']);
         Route::post('/', [AdminUserController::class, 'store']);
         Route::get('roles', [AdminUserController::class, 'roles']);

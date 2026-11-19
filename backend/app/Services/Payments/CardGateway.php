@@ -145,11 +145,16 @@ class CardGateway implements PaymentGatewayInterface
         ];
     }
 
-    public function processRefund(Payment $payment, float $amount, ?string $reason = null): array
+    public function processRefund(Payment $payment, float $amount, ?string $reason = null, ?string $idempotencyKey = null): array
     {
+        $refundId = $idempotencyKey
+            ? 'REF-CARD-' . strtoupper(substr(md5($idempotencyKey), 0, 10))
+            : 'REF-CARD-' . Str::upper(Str::random(10));
+
         return [
             'success' => true,
-            'refund_id' => 'REF-CARD-' . Str::upper(Str::random(10)),
+            'refund_id' => $refundId,
+            'idempotency_key' => $idempotencyKey,
             'message' => "Refund of \${$amount} successfully credited back to original payment card.",
         ];
     }

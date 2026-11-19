@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Middleware\AdminStaffMiddleware;
+use App\Http\Middleware\AuthenticateSession;
+use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\PermissionMiddleware;
 use App\Http\Middleware\RoleMiddleware;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -25,13 +27,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->statefulApi();
+        $middleware->validateCsrfTokens(except: [
+            'api/*',
+        ]);
+        $middleware->authenticateSessions();
         $middleware->redirectGuestsTo(fn () => route('admin.login'));
 
         $middleware->alias([
+            'auth.session' => AuthenticateSession::class,
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'admin.staff' => AdminStaffMiddleware::class,
+            'active.user' => EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -61,6 +68,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (HttpException $e, Request $request) use ($handleExpired) {
             if ($e->getStatusCode() === 419) {
                 return $handleExpired($request);
+            }
+
+            if ($e->getStatusCode() === 403 && ($request->is('api/*') || $request->expectsJson())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage() ?: 'Unauthorized access.',
+                ], 403);
             }
         });
 

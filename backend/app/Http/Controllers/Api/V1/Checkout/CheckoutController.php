@@ -22,14 +22,27 @@ class CheckoutController extends Controller
      */
     public function preview(Request $request): JsonResponse
     {
+        $user = $request->user('sanctum');
+        if ($user && $user->status !== 'active') {
+            $user->currentAccessToken()?->delete();
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account has been suspended. Please contact customer support.',
+            ], 403);
+        }
+
         try {
-            $quote = $this->checkoutService->calculateQuote($request->all(), $request->user('sanctum'));
+            $quote = $this->checkoutService->calculateQuote($request->all(), $user);
 
             return response()->json([
                 'success' => true,
                 'data' => $quote,
             ]);
         } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Checkout exception: ' . $e->getMessage(), [
+                'exception' => $e,
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -61,8 +74,17 @@ class CheckoutController extends Controller
             ?? $request->input('guest_session_id')
             ?? null;
 
+        $user = $request->user('sanctum');
+        if ($user && $user->status !== 'active') {
+            $user->currentAccessToken()?->delete();
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account has been suspended. Please contact customer support.',
+            ], 403);
+        }
+
         try {
-            $result = $this->checkoutService->processCheckout($payload, $request->user('sanctum'), $guestSessionId);
+            $result = $this->checkoutService->processCheckout($payload, $user, $guestSessionId);
 
             $isReplay = $result['idempotent_replay'] ?? false;
 
@@ -92,6 +114,10 @@ class CheckoutController extends Controller
                 'requires_auth' => $isAccountExists,
             ], 422);
         } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Checkout exception: ' . $e->getMessage(), [
+                'exception' => $e,
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),

@@ -53,6 +53,7 @@ class OrderSeeder extends Seeder
             'postal_code' => '11201',
             'country' => 'United States',
             'phone' => '+1 (555) 019-2834',
+            'email' => $customer->email,
         ];
 
         // 1. Order 1: Dispatched

@@ -16,7 +16,7 @@ class OrderController extends Controller
 
     public function index(Request $request)
     {
-        $query = Order::with(['customer', 'items', 'payments'])->latest();
+        $query = Order::with(['customer', 'items', 'payments']);
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
@@ -34,6 +34,14 @@ class OrderController extends Controller
             }
         }
 
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
         if ($request->filled('search')) {
             $term = trim($request->search);
             $query->where(function ($q) use ($term) {
@@ -43,6 +51,14 @@ class OrderController extends Controller
             });
         }
 
+        $sort = $request->get('sort', 'latest');
+        match ($sort) {
+            'oldest' => $query->oldest(),
+            'total_high' => $query->orderByDesc('total'),
+            'total_low' => $query->orderBy('total'),
+            default => $query->latest(),
+        };
+
         $orders = $query->paginate(15)->withQueryString();
         $statuses = OrderStatus::cases();
 
@@ -51,7 +67,16 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $order->load(['customer', 'items.product', 'items.variant', 'statusHistories.updatedBy', 'payments', 'returns', 'shipments']);
+        $order->load([
+            'customer' => fn ($q) => $q->withCount('orders'),
+            'items.product',
+            'items.variant',
+            'statusHistories.updatedBy',
+            'payments',
+            'returns.items',
+            'refunds',
+            'shipments.events',
+        ]);
         $statuses = OrderStatus::cases();
 
         return view('admin.orders.show', compact('order', 'statuses'));
@@ -65,6 +90,7 @@ class OrderController extends Controller
             'notes' => 'nullable|string|max:500',
             'tracking_number' => 'nullable|string|max:100',
             'carrier' => 'nullable|string|max:100',
+            'estimated_delivery' => 'nullable|date',
         ]);
 
         try {
@@ -75,7 +101,8 @@ class OrderController extends Controller
                 $validated['notes'] ?? null,
                 auth()->id(),
                 $validated['tracking_number'] ?? null,
-                $validated['carrier'] ?? null
+                $validated['carrier'] ?? null,
+                $validated['estimated_delivery'] ?? null
             );
 
             ActivityLog::log('order.status_updated', "Updated Order #{$order->order_number} to {$validated['status']}", $order);

@@ -79,12 +79,26 @@ export class CartService {
         cart,
       };
     } catch (error: any) {
-      // Fallback check against static coupons if API is offline
+      // If backend responded with an authoritative validation error, propagate it directly
+      if (!error?.isNetworkError && error?.status && error?.status < 500) {
+        throw new Error(error?.message || "Invalid coupon code.");
+      }
+
+      // Offline fallback check against static coupons ONLY if API is unreachable
       const staticFound = VALID_COUPONS.find((c) => c.code.toUpperCase() === code.toUpperCase().trim());
       if (staticFound) {
+        const currentCart = (await this.getCart()) as BackendCart;
+        const currentSubtotal = currentCart?.subtotal || 0;
+        if (staticFound.minOrderAmount && currentSubtotal < staticFound.minOrderAmount) {
+          throw new Error(
+            `Coupon '${staticFound.code}' requires a minimum cart subtotal of $${staticFound.minOrderAmount.toFixed(
+              2
+            )} (current subtotal is $${currentSubtotal.toFixed(2)}).`
+          );
+        }
         return {
           coupon: staticFound,
-          cart: (await this.getCart()) as BackendCart,
+          cart: currentCart,
         };
       }
       throw new Error(error?.message || "Invalid coupon code.");

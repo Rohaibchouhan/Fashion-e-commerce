@@ -53,7 +53,7 @@ export const SearchModal: React.FC = () => {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const popularSearches = ["Relaxed Fit Tee", "Chino Pants", "Linen Shirt", "White Sneakers", "Overshirt"];
+  const popularSearches = ["Relaxed Fit Tee", "Easy Chino Pants", "Linen Shirt", "White Sneakers", "Overshirt"];
 
   if (!isSearchOpen) return null;
 

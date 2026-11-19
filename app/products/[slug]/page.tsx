@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import {
   Heart,
   ShoppingBag,
@@ -12,16 +12,22 @@ import {
   RotateCcw,
   ShieldCheck,
   Check,
+  CheckCircle2,
   Ruler,
   Maximize2,
   ChevronRight,
   Plus,
   Minus,
   Loader2,
+  PenLine,
+  Clock,
 } from "lucide-react";
 import { ProductsService } from "@/services/products.service";
+import { ReviewsService, UserReviewData, UserEligibilityData } from "@/services/reviews.service";
+import { ReviewModal } from "@/components/product/review-modal";
+import { ApiClient } from "@/services/api-client";
 import { Product } from "@/types/product";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, cn } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { useWishlistStore } from "@/stores/wishlist-store";
 import { toast } from "@/components/ui/toast";
@@ -54,6 +60,44 @@ export default function ProductDetailPage({
   const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"details" | "care" | "reviews">("details");
 
+  const router = useRouter();
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [userReview, setUserReview] = useState<UserReviewData | null>(null);
+  const [userEligibility, setUserEligibility] = useState<UserEligibilityData | null>(null);
+
+  const loadReviewDetails = async (identifier: string) => {
+    try {
+      const res = await ReviewsService.getReviews(identifier);
+      if (res.userReview !== undefined) setUserReview(res.userReview);
+      if (res.userEligibility !== undefined) setUserEligibility(res.userEligibility);
+      if (res.stats) {
+        setProduct((prev) =>
+          prev
+            ? {
+                ...prev,
+                rating: res.stats!.averageRating,
+                reviewCount: res.stats!.totalCount,
+                ratingStats: res.stats,
+                reviews: res.data,
+              }
+            : prev
+        );
+      }
+    } catch (err) {
+      console.warn("[loadReviewDetails] Error loading review details:", err);
+    }
+  };
+
+  const handleWriteReviewClick = () => {
+    const token = ApiClient.getAuthToken();
+    if (!token) {
+      toast.error("Please sign in to your WearDay account to write a review.");
+      router.push(`/auth/login?redirect=/products/${slug}#reviews`);
+      return;
+    }
+    setIsReviewModalOpen(true);
+  };
+
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -72,6 +116,7 @@ export default function ProductDetailPage({
         }
         setProduct(prod);
         setRelatedProducts(related);
+        loadReviewDetails(slug);
         const defaultSize = prod.sizes?.find((s) => s.inStock)?.name || prod.sizes?.[0]?.name || "M";
         setSelectedSize(defaultSize);
         setIsLoading(false);
@@ -131,8 +176,25 @@ export default function ProductDetailPage({
   const isWishlisted = hasItem(product.id);
   const activeColor = product.colors[selectedColorIdx] || product.colors[0] || { name: "Default", hex: "#000" };
   const sizeObj = product.sizes.find((s) => s.name === selectedSize);
-  const isSelectedSizeInStock = sizeObj ? sizeObj.inStock : true;
-  const currentStockCount = sizeObj?.stockCount || 15;
+
+  // Match authoritative variant from backend database
+  const matchedVariant =
+    product.variants?.find(
+      (v) =>
+        v.size?.toLowerCase() === selectedSize.toLowerCase() &&
+        (!v.color || v.color.toLowerCase() === activeColor.name.toLowerCase())
+    ) ||
+    product.variants?.find((v) => v.size?.toLowerCase() === selectedSize.toLowerCase()) ||
+    product.variants?.[0];
+
+  const currentPrice = matchedVariant?.price ?? product.price;
+  const currentCompareAtPrice = matchedVariant?.compareAtPrice ?? product.compareAtPrice;
+  const currentStockCount = matchedVariant?.stock ?? sizeObj?.stockCount ?? 15;
+  const isSelectedSizeInStock = matchedVariant
+    ? matchedVariant.stock > 0
+    : sizeObj
+    ? sizeObj.inStock
+    : true;
 
   const handleAddToCart = () => {
     if (!isSelectedSizeInStock) {
@@ -142,10 +204,11 @@ export default function ProductDetailPage({
 
     addItem({
       productId: product.id,
+      variantId: matchedVariant?.id ? String(matchedVariant.id) : undefined,
       slug: product.slug,
       name: product.name,
-      price: product.price,
-      originalPrice: product.compareAtPrice,
+      price: currentPrice,
+      originalPrice: currentCompareAtPrice,
       image: product.images[activeImageIdx] || product.images[0],
       selectedColor: activeColor.name,
       selectedSize,
@@ -163,6 +226,33 @@ export default function ProductDetailPage({
       toast.success("Added to Wishlist", `${product.name} saved to your wishlist.`);
     } else {
       toast.info("Removed from Wishlist", `${product.name} removed from your wishlist.`);
+    }
+  };
+
+  const handleColorSelect = (idx: number) => {
+    setSelectedColorIdx(idx);
+    if (!product) return;
+
+    const color = product.colors[idx];
+    if (!color) return;
+
+    // Synchronize main showcase photo with the selected color swatch
+    const variantWithImage = product.variants?.find(
+      (v) => v.color?.toLowerCase() === color.name.toLowerCase() && v.image
+    );
+    const targetImage = color.image || variantWithImage?.image;
+
+    if (targetImage) {
+      const foundIdx = product.images.findIndex((img) => img === targetImage);
+      if (foundIdx !== -1) {
+        setActiveImageIdx(foundIdx);
+        return;
+      }
+    }
+
+    // Direct fallback: match by swatch index if gallery contains corresponding photo
+    if (product.images[idx]) {
+      setActiveImageIdx(idx);
     }
   };
 
@@ -243,31 +333,61 @@ export default function ProductDetailPage({
 
             {/* Rating & Review Count */}
             <div className="flex items-center gap-2 mt-3 text-xs text-neutral-600">
-              <div className="flex items-center text-amber-400">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                ))}
-              </div>
-              <span className="font-bold text-neutral-900">{product.rating}</span>
-              <span className="text-neutral-400">•</span>
-              <a href="#reviews" onClick={() => setActiveTab("reviews")} className="underline hover:text-neutral-900">
-                {product.reviewCount} customer reviews
-              </a>
+              {product.reviewCount > 0 ? (
+                <>
+                  <div className="flex items-center text-amber-400">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star
+                        key={i}
+                        className={`w-3.5 h-3.5 ${
+                          i < Math.round(product.rating) ? "fill-current" : "text-neutral-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="font-bold text-neutral-900">{product.rating.toFixed(1)}</span>
+                  <span className="text-neutral-400">•</span>
+                  <a
+                    href="#reviews"
+                    onClick={() => setActiveTab("reviews")}
+                    className="underline hover:text-neutral-900 cursor-pointer"
+                  >
+                    {product.reviewCount} customer {product.reviewCount === 1 ? "review" : "reviews"}
+                  </a>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center text-neutral-300">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="w-3.5 h-3.5 text-neutral-200" />
+                    ))}
+                  </div>
+                  <span className="text-neutral-400">0.0 (0 reviews)</span>
+                  <span className="text-neutral-300">•</span>
+                  <a
+                    href="#reviews"
+                    onClick={() => setActiveTab("reviews")}
+                    className="text-neutral-500 underline hover:text-neutral-900 cursor-pointer"
+                  >
+                    Be the first to review
+                  </a>
+                </>
+              )}
             </div>
           </div>
 
           {/* Pricing & Sale Discount */}
           <div className="flex items-baseline gap-3 pb-4 border-b border-neutral-100">
             <span className="text-2xl font-black text-neutral-900">
-              {formatPrice(product.price)}
+              {formatPrice(currentPrice)}
             </span>
-            {product.compareAtPrice && product.compareAtPrice > product.price && (
+            {currentCompareAtPrice && currentCompareAtPrice > currentPrice && (
               <>
                 <span className="text-sm text-neutral-400 line-through">
-                  {formatPrice(product.compareAtPrice)}
+                  {formatPrice(currentCompareAtPrice)}
                 </span>
                 <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                  Save {Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)}%
+                  Save {Math.round(((currentCompareAtPrice - currentPrice) / currentCompareAtPrice) * 100)}%
                 </span>
               </>
             )}
@@ -284,7 +404,7 @@ export default function ProductDetailPage({
               {product.colors.map((color, idx) => (
                 <button
                   key={color.name}
-                  onClick={() => setSelectedColorIdx(idx)}
+                  onClick={() => handleColorSelect(idx)}
                   className={`w-8 h-8 rounded-full border transition-all cursor-pointer ${
                     selectedColorIdx === idx
                       ? "ring-2 ring-neutral-900 ring-offset-2 border-white scale-105"
@@ -377,7 +497,7 @@ export default function ProductDetailPage({
                 className="flex-1 h-12 bg-neutral-950 hover:bg-neutral-800 text-white rounded-full font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-98 cursor-pointer disabled:opacity-50"
               >
                 <ShoppingBag className="w-4 h-4" />
-                <span>Add to Bag • {formatPrice(product.price * quantity)}</span>
+                <span>Add to Bag • {formatPrice(currentPrice * quantity)}</span>
               </button>
 
               {/* Wishlist Button */}
@@ -476,40 +596,217 @@ export default function ProductDetailPage({
 
           {activeTab === "reviews" && (
             <div className="space-y-6">
-              <div className="flex items-center gap-6 p-6 rounded-2xl bg-neutral-50 border border-neutral-100 max-w-xl">
-                <div className="text-center">
-                  <div className="text-3xl font-black text-neutral-900">{product.rating}</div>
-                  <div className="flex items-center text-amber-400 justify-center mt-1">
+              {/* Customer's Own Review Status Banner (if already submitted) */}
+              {userReview && (
+                <div
+                  className={cn(
+                    "p-5 rounded-2xl border text-xs space-y-2.5 max-w-2xl animate-in fade-in",
+                    userReview.isApproved
+                      ? "bg-emerald-50/70 border-emerald-200/80 text-emerald-950"
+                      : "bg-amber-50/70 border-amber-200/80 text-amber-950"
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <Clock
+                        className={cn(
+                          "w-4 h-4",
+                          userReview.isApproved ? "text-emerald-600" : "text-amber-600"
+                        )}
+                      />
+                      {userReview.isApproved
+                        ? "Your Review is Published"
+                        : "Your Review is Pending Moderation"}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border",
+                          userReview.isApproved
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-amber-100 text-amber-800 border-amber-300"
+                        )}
+                      >
+                        {userReview.isApproved ? "Published" : "Pending Approval"}
+                      </span>
+                      <button
+                        onClick={handleWriteReviewClick}
+                        className="text-[11px] font-semibold underline hover:text-neutral-900 cursor-pointer"
+                      >
+                        Edit Your Review
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-amber-400">
                     {Array.from({ length: 5 }).map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-current" />
+                      <Star
+                        key={i}
+                        className={`w-3.5 h-3.5 ${
+                          i < userReview.rating ? "fill-current" : "text-neutral-200"
+                        }`}
+                      />
                     ))}
                   </div>
-                  <div className="text-[10px] text-neutral-400 mt-0.5">Based on {product.reviewCount} reviews</div>
+
+                  <div>
+                    <h5 className="font-bold text-neutral-900">{userReview.title}</h5>
+                    <p className="text-neutral-700 leading-relaxed mt-0.5">{userReview.comment}</p>
+                  </div>
+
+                  {!userReview.isApproved && (
+                    <p className="text-[11px] text-amber-800/80 italic pt-1 border-t border-amber-200/60">
+                      Your review is undergoing routine moderation for customer authenticity and will be publicly visible upon approval.
+                    </p>
+                  )}
                 </div>
-                <div className="flex-1 space-y-1.5 text-[11px] text-neutral-500">
-                  <div className="flex items-center gap-2">
-                    <span>5 ★</span>
-                    <div className="h-1.5 flex-1 bg-neutral-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-neutral-900 w-[85%]" />
+              )}
+
+              {product.reviewCount > 0 ? (
+                <>
+                  <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 p-6 rounded-3xl bg-neutral-50 border border-neutral-200/70">
+                    {/* Rating Breakdown */}
+                    <div className="flex flex-col sm:flex-row items-center gap-6 flex-1">
+                      <div className="text-center shrink-0">
+                        <div className="text-4xl font-black text-neutral-900 tracking-tight">
+                          {product.rating.toFixed(1)}
+                        </div>
+                        <div className="flex items-center text-amber-400 justify-center mt-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-3.5 h-3.5 ${
+                                i < Math.round(product.rating) ? "fill-current" : "text-neutral-200"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <div className="text-[10px] text-neutral-400 mt-1 font-medium">
+                          Based on {product.reviewCount} {product.reviewCount === 1 ? "review" : "reviews"}
+                        </div>
+                      </div>
+
+                      <div className="w-full flex-1 space-y-1.5 text-[11px] text-neutral-500">
+                        {(product.ratingStats?.breakdown || [
+                          { star: 5, percentage: product.ratingStats?.percentages?.["5"] ?? 0, count: product.ratingStats?.counts?.["5"] ?? 0 },
+                          { star: 4, percentage: product.ratingStats?.percentages?.["4"] ?? 0, count: product.ratingStats?.counts?.["4"] ?? 0 },
+                          { star: 3, percentage: product.ratingStats?.percentages?.["3"] ?? 0, count: product.ratingStats?.counts?.["3"] ?? 0 },
+                          { star: 2, percentage: product.ratingStats?.percentages?.["2"] ?? 0, count: product.ratingStats?.counts?.["2"] ?? 0 },
+                          { star: 1, percentage: product.ratingStats?.percentages?.["1"] ?? 0, count: product.ratingStats?.counts?.["1"] ?? 0 },
+                        ]).map((item) => (
+                          <div key={item.star} className="flex items-center gap-2">
+                            <span className="w-5 text-right font-medium">{item.star} ★</span>
+                            <div className="h-1.5 flex-1 bg-neutral-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-neutral-900 transition-all duration-300"
+                                style={{ width: `${item.percentage}%` }}
+                              />
+                            </div>
+                            <span className="w-10 text-right text-neutral-400 font-mono text-[10px]">
+                              {item.percentage}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <span>85%</span>
+
+                    {/* Write a Review Button Card */}
+                    <div className="lg:border-l lg:border-neutral-200 lg:pl-8 flex flex-col items-center lg:items-end justify-center gap-2 shrink-0">
+                      <button
+                        onClick={handleWriteReviewClick}
+                        className="w-full sm:w-auto px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-full transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-98"
+                      >
+                        <PenLine className="w-4 h-4" />
+                        <span>Write a Review</span>
+                      </button>
+                      <p className="text-[11px] text-neutral-400 text-center lg:text-right">
+                        Share your fit and fabric experience
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>4 ★</span>
-                    <div className="h-1.5 flex-1 bg-neutral-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-neutral-900 w-[12%]" />
+
+                  {/* Individual Verified Reviews List */}
+                  <div className="pt-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                        Verified Customer Reviews ({product.reviews?.length || 0})
+                      </h4>
+                      <button
+                        onClick={handleWriteReviewClick}
+                        className="text-xs font-bold text-neutral-900 underline hover:text-neutral-700 cursor-pointer sm:hidden"
+                      >
+                        Write a Review
+                      </button>
                     </div>
-                    <span>12%</span>
+
+                    {product.reviews && product.reviews.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {product.reviews.map((rev) => (
+                          <div
+                            key={rev.id}
+                            className="p-5 rounded-2xl bg-white border border-neutral-200/80 shadow-xs space-y-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1 text-amber-400">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`w-3.5 h-3.5 ${
+                                      i < rev.rating ? "fill-current" : "text-neutral-200"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-[11px] text-neutral-400 font-mono">{rev.date}</span>
+                            </div>
+
+                            <div>
+                              <h5 className="text-xs font-bold text-neutral-900">{rev.title}</h5>
+                              <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{rev.comment}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1 border-t border-neutral-100 text-[11px] text-neutral-500">
+                              <span className="font-semibold text-neutral-800">{rev.author}</span>
+                              {rev.verified && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Verified Buyer
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-8 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-center space-y-2">
+                        <p className="text-xs font-semibold text-neutral-700">No review comments available yet.</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>3 ★</span>
-                    <div className="h-1.5 flex-1 bg-neutral-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-neutral-900 w-[3%]" />
-                    </div>
-                    <span>3%</span>
+                </>
+              ) : (
+                <div className="p-8 sm:p-10 rounded-3xl bg-neutral-50 border border-neutral-200/70 text-center space-y-4 max-w-xl">
+                  <div className="flex items-center justify-center gap-1 text-neutral-300">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="w-5 h-5 text-neutral-300" />
+                    ))}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-neutral-900">No customer reviews yet</h4>
+                    <p className="text-xs text-neutral-500 max-w-sm mx-auto mt-1">
+                      Be the first to review your experience with this piece after purchasing.
+                    </p>
+                  </div>
+                  <div>
+                    <button
+                      onClick={handleWriteReviewClick}
+                      className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-full transition-all inline-flex items-center gap-2 shadow-xs cursor-pointer active:scale-98"
+                    >
+                      <PenLine className="w-4 h-4" />
+                      <span>Write the First Review</span>
+                    </button>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -589,6 +886,16 @@ export default function ProductDetailPage({
           </p>
         </div>
       </Modal>
+      {/* Customer Review Modal */}
+      {product && (
+        <ReviewModal
+          isOpen={isReviewModalOpen}
+          onClose={() => setIsReviewModalOpen(false)}
+          product={product}
+          hasPurchased={userEligibility?.hasPurchased ?? false}
+          onSuccess={() => loadReviewDetails(product.slug || product.id)}
+        />
+      )}
     </div>
   );
 }

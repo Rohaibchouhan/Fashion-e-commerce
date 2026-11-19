@@ -69,5 +69,10 @@ class Refund extends Model
     {
         return $this->order?->is_test ?? false;
     }
+
+    public function getGatewayAttribute(): ?string
+    {
+        return $this->payment?->payment_method ?? $this->transactions()->latest()->first()?->gateway;
+    }
 }
 

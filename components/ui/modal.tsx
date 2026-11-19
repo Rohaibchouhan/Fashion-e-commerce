@@ -26,13 +26,22 @@ export const Modal: React.FC<ModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          onClose();
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.body.style.overflow = "unset";
+        window.removeEventListener("keydown", handleKeyDown);
+      };
     } else {
       document.body.style.overflow = "unset";
     }
-    return () => {
-      document.body.style.overflow = "unset";
-    };
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -47,11 +56,14 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      onClick={onClose}
+    >
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
-        onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal Dialog Content */}
@@ -61,10 +73,12 @@ export const Modal: React.FC<ModalProps> = ({
           maxWidths[maxWidth],
           className
         )}
+        onClick={(e) => e.stopPropagation()}
       >
         <button
+          type="button"
           onClick={onClose}
-          className="absolute right-5 top-5 p-2 rounded-full text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+          className="absolute right-4 top-4 z-30 p-2.5 rounded-full bg-white/90 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 shadow-xs transition-colors cursor-pointer"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />

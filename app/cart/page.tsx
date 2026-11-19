@@ -32,6 +32,7 @@ export default function CartPage() {
 
   const [couponInput, setCouponInput] = useState("");
   const [loadingCoupon, setLoadingCoupon] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   useEffect(() => {
     syncCart();
@@ -53,12 +54,15 @@ export default function CartPage() {
 
     try {
       setLoadingCoupon(true);
+      setPromoError(null);
       const res = await CartService.applyCoupon(couponInput);
       applyCoupon(res.coupon);
       toast.success("Promo Code Applied", res.coupon.description);
       setCouponInput("");
     } catch (err: any) {
-      toast.error("Invalid Code", err.message || "Please check the code and try again.");
+      const msg = err.message || "Please check the code and try again.";
+      setPromoError(msg);
+      toast.error("Invalid Code", msg);
     } finally {
       setLoadingCoupon(false);
     }
@@ -262,28 +266,40 @@ export default function CartPage() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleApplyPromo} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Promo Code"
-                  value={couponInput}
-                  onChange={(e) => setCouponInput(e.target.value)}
-                  className="flex-1 text-xs px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-neutral-900"
-                />
-                <button
-                  type="submit"
-                  disabled={loadingCoupon || !couponInput.trim()}
-                  className="px-4 py-2.5 bg-neutral-900 text-white text-xs font-bold rounded-xl hover:bg-neutral-800 disabled:opacity-50 transition-colors"
-                >
-                  {loadingCoupon ? "..." : "Apply"}
-                </button>
-              </form>
+              <div>
+                <form onSubmit={handleApplyPromo} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Promo Code"
+                    value={couponInput}
+                    onChange={(e) => {
+                      setCouponInput(e.target.value);
+                      if (promoError) setPromoError(null);
+                    }}
+                    className={`flex-1 text-xs px-3.5 py-2.5 bg-neutral-50 border rounded-xl uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-neutral-900 ${
+                      promoError ? "border-rose-300 bg-rose-50/30" : "border-neutral-200"
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={loadingCoupon || !couponInput.trim()}
+                    className="px-4 py-2.5 bg-neutral-900 text-white text-xs font-bold rounded-xl hover:bg-neutral-800 disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    {loadingCoupon ? "..." : "Apply"}
+                  </button>
+                </form>
+                {promoError && (
+                  <p className="text-[11px] text-rose-600 font-medium mt-1.5 pl-1">{promoError}</p>
+                )}
+              </div>
             )}
 
             {/* Line Item Prices */}
             <div className="space-y-3 text-xs text-neutral-600 pb-4 border-b border-neutral-100">
               <div className="flex justify-between">
-                <span>Subtotal ({items.length} items)</span>
+                <span>
+                  Subtotal ({items.length} {items.length === 1 ? "item" : "items"})
+                </span>
                 <span className="font-semibold text-neutral-900">{formatPrice(subtotal)}</span>
               </div>
               {discount > 0 && (

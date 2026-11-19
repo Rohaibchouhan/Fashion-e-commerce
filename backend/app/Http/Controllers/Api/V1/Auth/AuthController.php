@@ -11,9 +11,14 @@ use App\Http\Requests\Auth\CustomerRegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\AuthService;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -100,9 +105,7 @@ class AuthController extends Controller
 
         $user = User::where('email', strtolower($request->email))->first();
         if ($user) {
-            // Password reset token creation
-            $token = Password::createToken($user);
-            // In local/production, send email or log
+            Password::sendResetLink($request->only('email'));
         }
 
         return response()->json([
@@ -116,20 +119,40 @@ class AuthController extends Controller
         $request->validate([
             'token' => 'required|string',
             'email' => 'required|email',
-            'password' => 'required|string|min:8',
+            'password' => 'required|string|min:8|confirmed',
+            'password_confirmation' => 'required|string|min:8',
         ]);
 
-        $user = User::where('email', strtolower($request->email))->first();
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        $credentials = $request->only('email', 'password', 'password_confirmation', 'token');
+
+        $status = Password::reset($credentials, function (User $user, string $password) {
+            $user->forceFill([
+                'password' => Hash::make($password),
+                'remember_token' => Str::random(60),
+            ])->save();
+
+            // Invalidate all existing authentication tokens after a successful password reset
+            $user->tokens()->delete();
+
+            // Invalidate database sessions if sessions table is present
+            if (Schema::hasTable('sessions')) {
+                DB::table('sessions')->where('user_id', $user->id)->delete();
+            }
+
+            event(new PasswordReset($user));
+        });
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Password has been reset successfully. You may now log in.',
+            ]);
         }
 
-        $user->update(['password' => bcrypt($request->password)]);
-
         return response()->json([
-            'success' => true,
-            'message' => 'Password has been reset successfully. You may now log in.',
-        ]);
+            'success' => false,
+            'message' => 'This password reset token is invalid or has expired.',
+        ], 400);
     }
 
     public function addAddress(CustomerAddressRequest $request): JsonResponse

@@ -80,12 +80,14 @@ export class AuthService {
   static async resetPassword(
     token: string,
     newPassword: string,
-    email?: string
+    email?: string,
+    confirmPassword?: string
   ): Promise<{ success: boolean }> {
     const res = await ApiClient.post<{ success: boolean }>("/auth/reset-password", {
       token,
-      email: email || "alex.morgan@example.com",
+      email: email || "",
       password: newPassword,
+      password_confirmation: confirmPassword ?? "",
     });
     return { success: res.success };
   }

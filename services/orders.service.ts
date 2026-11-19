@@ -25,15 +25,11 @@ export class OrdersService {
   }
 
   static async track(orderNumber: string, emailOrZip?: string): Promise<Order | null> {
-    try {
-      const res = await apiClient.post<Order>("/orders/track", {
-        order_number: orderNumber.trim(),
-        email_or_zip: (emailOrZip || "").trim(),
-      });
-      return res.data || null;
-    } catch {
-      return null;
-    }
+    const res = await apiClient.post<Order>("/orders/track", {
+      order_number: orderNumber.trim(),
+      email_or_zip: (emailOrZip || "").trim(),
+    });
+    return res.data || null;
   }
 
   static async cancelOrder(orderNumber: string, reason?: string): Promise<Order | null> {

@@ -50,17 +50,20 @@ class ProductReview extends Model
         return $query->where('is_approved', true);
     }
 
+    protected static function booted(): void
+    {
+        static::saved(function (ProductReview $review) {
+            $review->product?->updateReviewStats();
+        });
+
+        static::deleted(function (ProductReview $review) {
+            $review->product?->updateReviewStats();
+        });
+    }
+
     public function updateProductStats(): void
     {
-        $stats = static::where('product_id', $this->product_id)
-            ->where('is_approved', true)
-            ->selectRaw('COUNT(*) as total_count, AVG(rating) as avg_rating')
-            ->first();
-
-        $this->product()->update([
-            'rating' => round($stats->avg_rating ?? 0, 2),
-            'review_count' => (int) ($stats->total_count ?? 0),
-        ]);
+        $this->product?->updateReviewStats();
     }
 }
 

@@ -6,8 +6,8 @@
 @section('content')
 <div class="space-y-5">
     <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200">
-        <form method="GET" class="flex flex-wrap items-center gap-3 w-full text-xs">
-            <input type="text" name="search" value="{{ request('search') }}" placeholder="Order #, tracking, customer..." class="px-3 py-2 rounded-lg border border-slate-300 w-56 focus:outline-none focus:ring-1 focus:ring-slate-900">
+        <form method="GET" class="flex flex-wrap items-center gap-2.5 w-full text-xs">
+            <input type="text" name="search" value="{{ request('search') }}" placeholder="Order #, tracking, customer..." class="px-3 py-2 rounded-lg border border-slate-300 w-48 focus:outline-none focus:ring-1 focus:ring-slate-900">
             
             <select name="status" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 focus:outline-none">
                 <option value="all">All Fulfillment Statuses</option>
@@ -24,9 +24,28 @@
                 <option value="refunded" {{ request('payment_status') === 'refunded' ? 'selected' : '' }}>Refunded</option>
             </select>
 
-            <button type="submit" class="px-3 py-2 bg-slate-900 text-white rounded-lg font-medium">Filter</button>
-            @if(request()->hasAny(['search', 'status', 'payment_status']))
-            <a href="{{ route('admin.orders') }}" class="text-xs text-slate-500 hover:underline">Reset</a>
+            <select name="type" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 focus:outline-none">
+                <option value="all">All Types</option>
+                <option value="real" {{ request('type') === 'real' ? 'selected' : '' }}>Real Orders</option>
+                <option value="test" {{ request('type') === 'test' ? 'selected' : '' }}>Test Orders</option>
+            </select>
+
+            <div class="flex items-center space-x-1">
+                <input type="date" name="date_from" value="{{ request('date_from') }}" title="Date From" class="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs focus:outline-none">
+                <span class="text-slate-400 text-xs">to</span>
+                <input type="date" name="date_to" value="{{ request('date_to') }}" title="Date To" class="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs focus:outline-none">
+            </div>
+
+            <select name="sort" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 focus:outline-none">
+                <option value="latest" {{ request('sort') === 'latest' ? 'selected' : '' }}>Sort: Newest</option>
+                <option value="oldest" {{ request('sort') === 'oldest' ? 'selected' : '' }}>Sort: Oldest</option>
+                <option value="total_high" {{ request('sort') === 'total_high' ? 'selected' : '' }}>Sort: Total (High to Low)</option>
+                <option value="total_low" {{ request('sort') === 'total_low' ? 'selected' : '' }}>Sort: Total (Low to High)</option>
+            </select>
+
+            <button type="submit" class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-medium transition">Filter</button>
+            @if(request()->hasAny(['search', 'status', 'payment_status', 'type', 'date_from', 'date_to', 'sort']))
+            <a href="{{ route('admin.orders') }}" class="text-xs text-slate-500 hover:text-slate-800 hover:underline">Reset</a>
             @endif
         </form>
     </div>

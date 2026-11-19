@@ -31,8 +31,13 @@ import {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const { items, clearCart } = useCartStore();
   const { user, isAuthenticated, login } = useAuthStore();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Authentication mode for unauthenticated visitors
   const [authMode, setAuthMode] = useState<"new_account" | "sign_in">("new_account");
@@ -115,6 +120,7 @@ export default function CheckoutPage() {
 
   // Idempotency key per checkout attempt
   const [idempotencyKey, setIdempotencyKey] = useState<string>("");
+  const [hasRestoredStorage, setHasRestoredStorage] = useState(false);
 
   useEffect(() => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -124,13 +130,87 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  // Update address selection when user logs in or addresses change
+  // Restore non-sensitive guest fields across page reloads (strictly no CVV/card info)
   useEffect(() => {
-    if (savedAddresses.length > 0 && selectedAddressMode === "new" && !newShippingAddress.street) {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = sessionStorage.getItem("wearday_checkout_guest_fields");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.authEmail) setAuthEmail(parsed.authEmail);
+        if (parsed.authName) setAuthName(parsed.authName);
+        if (parsed.authPhone) setAuthPhone(parsed.authPhone);
+        if (parsed.selectedAddressMode) setSelectedAddressMode(parsed.selectedAddressMode);
+        if (parsed.selectedAddressId) setSelectedAddressId(parsed.selectedAddressId);
+        if (parsed.newShippingAddress) {
+          setNewShippingAddress((prev) => ({ ...prev, ...parsed.newShippingAddress }));
+        }
+        if (parsed.deliveryNotes) setDeliveryNotes(parsed.deliveryNotes);
+        if (parsed.billingSameAsShipping !== undefined) {
+          setBillingSameAsShipping(parsed.billingSameAsShipping);
+        }
+        if (parsed.selectedBillingAddressId) {
+          setSelectedBillingAddressId(parsed.selectedBillingAddressId);
+        }
+        if (parsed.newBillingAddress) {
+          setNewBillingAddress((prev) => ({ ...prev, ...parsed.newBillingAddress }));
+        }
+        if (parsed.selectedShippingMethod) {
+          setSelectedShippingMethod(parsed.selectedShippingMethod);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to restore checkout guest fields:", e);
+    } finally {
+      setHasRestoredStorage(true);
+    }
+  }, []);
+
+  // Persist non-sensitive guest fields to sessionStorage
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasRestoredStorage) return;
+    try {
+      const payload = {
+        authEmail,
+        authName,
+        authPhone,
+        selectedAddressMode,
+        selectedAddressId,
+        newShippingAddress,
+        deliveryNotes,
+        billingSameAsShipping,
+        selectedBillingAddressId,
+        newBillingAddress,
+        selectedShippingMethod,
+      };
+      sessionStorage.setItem("wearday_checkout_guest_fields", JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Failed to persist checkout fields:", e);
+    }
+  }, [
+    hasRestoredStorage,
+    authEmail,
+    authName,
+    authPhone,
+    selectedAddressMode,
+    selectedAddressId,
+    newShippingAddress,
+    deliveryNotes,
+    billingSameAsShipping,
+    selectedBillingAddressId,
+    newBillingAddress,
+    selectedShippingMethod,
+  ]);
+
+  // Update address selection when user logs in or addresses change (respecting guest custom address)
+  useEffect(() => {
+    if (!hasRestoredStorage) return;
+    const saved = typeof window !== "undefined" ? sessionStorage.getItem("wearday_checkout_guest_fields") : null;
+    if (savedAddresses.length > 0 && selectedAddressMode === "new" && !newShippingAddress.street && !saved) {
       setSelectedAddressMode("saved");
       setSelectedAddressId(String(defaultAddress?.id || savedAddresses[0].id));
     }
-  }, [savedAddresses.length]);
+  }, [savedAddresses.length, hasRestoredStorage]);
 
   // Fetch authoritative quote from Laravel whenever items, shipping method, or coupon changes
   const fetchLiveQuote = useCallback(async () => {
@@ -330,6 +410,9 @@ export default function CheckoutPage() {
       const order = await CheckoutService.processOrder(payload);
 
       clearCart();
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("wearday_checkout_guest_fields");
+      }
       toast.success("Order Placed Successfully!", `Order #${order.orderNumber} is pending payment.`);
       router.push(`/order-confirmation/${order.id}`);
     } catch (err: any) {
@@ -374,6 +457,26 @@ export default function CheckoutPage() {
     }
   };
 
+  if (!mounted) {
+    return (
+      <div className="bg-neutral-50/50 min-h-screen py-10 sm:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Breadcrumb
+            items={[
+              { label: "Home", href: "/" },
+              { label: "Shopping Bag", href: "/cart" },
+              { label: "Secure Checkout" },
+            ]}
+          />
+          <div className="mt-8 flex flex-col items-center justify-center min-h-[400px]">
+            <Loader2 className="w-8 h-8 animate-spin text-neutral-400 mb-4" />
+            <p className="text-sm text-neutral-500 font-medium">Initializing secure checkout session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-24 text-center space-y-4">
@@ -390,13 +493,15 @@ export default function CheckoutPage() {
   }
 
   // Authoritative totals from quote or fallback calculations
+  const activeShippingMethod = SHIPPING_METHODS.find((s) => s.id === selectedShippingMethod);
+  const displayShippingMethodName = activeShippingMethod?.name || quote?.shippingMethodName || "Standard Ground Delivery";
   const displaySubtotal = quote?.subtotal ?? items.reduce((acc, i) => acc + i.price * i.quantity, 0);
   const displayDiscount = quote?.discount ?? 0;
   const displayShipping =
     quote?.shipping ??
     (displaySubtotal >= 50 && selectedShippingMethod === "standard"
       ? 0
-      : (SHIPPING_METHODS.find((s) => s.id === selectedShippingMethod)?.price ?? 10));
+      : (activeShippingMethod?.price ?? 10));
   const displayTax = quote?.tax ?? roundToTwo((displaySubtotal - displayDiscount) * 0.08);
   const displayTotal = quote?.total ?? Math.max(0, displaySubtotal - displayDiscount + displayShipping + displayTax);
 
@@ -1056,7 +1161,7 @@ export default function CheckoutPage() {
               </div>
             )}
             <div className="flex justify-between">
-              <span>Shipping ({quote?.shippingMethodName || "Ground"})</span>
+              <span>Shipping ({displayShippingMethodName})</span>
               <span className="font-semibold text-neutral-900">
                 {displayShipping === 0 ? <span className="text-emerald-700 font-bold">FREE</span> : formatPrice(displayShipping)}
               </span>

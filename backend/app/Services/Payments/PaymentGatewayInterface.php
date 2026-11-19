@@ -16,6 +16,6 @@ interface PaymentGatewayInterface
      */
     public function verifyWebhook(Payment $payment, array $payload, ?string $signature, string $rawBody): array;
 
-    public function processRefund(Payment $payment, float $amount, ?string $reason = null): array;
+    public function processRefund(Payment $payment, float $amount, ?string $reason = null, ?string $idempotencyKey = null): array;
 }
 

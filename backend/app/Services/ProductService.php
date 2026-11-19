@@ -75,14 +75,39 @@ class ProductService
             }
         }
 
-        // Search by keyword (name, sku, description)
-        if (!empty($params['search'])) {
-            $term = trim($params['search']);
-            $query->where(function (Builder $q) use ($term) {
-                $q->where('name', 'like', "%{$term}%")
-                    ->orWhere('sku', 'like', "%{$term}%")
-                    ->orWhere('subtitle', 'like', "%{$term}%")
-                    ->orWhere('description', 'like', "%{$term}%");
+        // Search by keyword (name, sku, subtitle, description, category, brand) with normalization & multi-word matching
+        if (!empty($params['search']) && trim($params['search']) !== '') {
+            $cleanTerm = preg_replace('/\s+/', ' ', trim($params['search']));
+            $words = array_values(array_filter(explode(' ', $cleanTerm), fn ($w) => mb_strlen($w) >= 2));
+
+            $query->where(function (Builder $q) use ($cleanTerm, $words) {
+                // 1. Full phrase match across attributes
+                $q->where(function (Builder $sub) use ($cleanTerm) {
+                    $termLower = '%' . mb_strtolower($cleanTerm) . '%';
+                    $sub->whereRaw('LOWER(name) LIKE ?', [$termLower])
+                        ->orWhereRaw('LOWER(sku) LIKE ?', [$termLower])
+                        ->orWhereRaw('LOWER(subtitle) LIKE ?', [$termLower])
+                        ->orWhereRaw('LOWER(description) LIKE ?', [$termLower])
+                        ->orWhereHas('category', fn (Builder $c) => $c->whereRaw('LOWER(name) LIKE ?', [$termLower]))
+                        ->orWhereHas('brand', fn (Builder $b) => $b->whereRaw('LOWER(name) LIKE ?', [$termLower]));
+                });
+
+                // 2. If multi-word query, match if all significant words appear across the product or its relations
+                if (count($words) > 1) {
+                    $q->orWhere(function (Builder $wordQuery) use ($words) {
+                        foreach ($words as $word) {
+                            $wordLower = '%' . mb_strtolower($word) . '%';
+                            $wordQuery->where(function (Builder $wq) use ($wordLower) {
+                                $wq->whereRaw('LOWER(name) LIKE ?', [$wordLower])
+                                   ->orWhereRaw('LOWER(sku) LIKE ?', [$wordLower])
+                                   ->orWhereRaw('LOWER(subtitle) LIKE ?', [$wordLower])
+                                   ->orWhereRaw('LOWER(description) LIKE ?', [$wordLower])
+                                   ->orWhereHas('category', fn (Builder $c) => $c->whereRaw('LOWER(name) LIKE ?', [$wordLower]))
+                                   ->orWhereHas('brand', fn (Builder $b) => $b->whereRaw('LOWER(name) LIKE ?', [$wordLower]));
+                            });
+                        }
+                    });
+                }
             });
         }
 

@@ -79,6 +79,29 @@ class UserService
     public function createUser(array $data, ?User $actor = null): User
     {
         return DB::transaction(function () use ($data, $actor) {
+            // Verify actor has admin_users.manage permission if actor is provided
+            if ($actor && !$actor->hasPermission('admin_users.manage')) {
+                throw ValidationException::withMessages([
+                    'user' => ['Unauthorized. Insufficient permissions to create users.'],
+                ]);
+            }
+
+            // Privilege Escalation Prevention: Check assigned role
+            $assignedRoleSlug = null;
+            if (!empty($data['role_id'])) {
+                $roleModel = Role::find($data['role_id']);
+                $assignedRoleSlug = $roleModel?->slug;
+            } elseif (!empty($data['role'])) {
+                $assignedRoleSlug = $data['role'];
+            }
+
+            // Only Super Admins can assign the Super Administrator role
+            if ($assignedRoleSlug === UserRole::SUPER_ADMIN->value && (!$actor || !$actor->isSuperAdmin())) {
+                throw ValidationException::withMessages([
+                    'role' => ['Only Super Administrators can create or assign the Super Administrator role.'],
+                ]);
+            }
+
             $name = trim($data['name'] ?? '');
             if (empty($name) && (!empty($data['first_name']) || !empty($data['last_name']))) {
                 $name = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
@@ -150,11 +173,50 @@ class UserService
     public function updateUser(User $user, array $data, ?User $actor = null): User
     {
         return DB::transaction(function () use ($user, $data, $actor) {
+            // Verify actor has admin_users.manage permission if actor is provided
+            if ($actor && !$actor->hasPermission('admin_users.manage')) {
+                throw ValidationException::withMessages([
+                    'user' => ['Unauthorized. Insufficient permissions to manage users.'],
+                ]);
+            }
+
             // Check self-modification restrictions
             if ($actor && $actor->id === $user->id) {
                 if (isset($data['status']) && $data['status'] !== 'active') {
                     throw ValidationException::withMessages([
                         'status' => ['You cannot deactivate or suspend your own account.'],
+                    ]);
+                }
+            }
+
+            // Non-super-admins cannot modify or demote a Super Admin
+            if ($user->isSuperAdmin() && $actor && !$actor->isSuperAdmin()) {
+                throw ValidationException::withMessages([
+                    'user' => ['Only Super Administrators can modify a Super Administrator account.'],
+                ]);
+            }
+
+            // Check role assignment changes
+            if (!empty($data['role_id']) || !empty($data['role'])) {
+                $newRoleSlug = null;
+                if (!empty($data['role_id'])) {
+                    $newRole = Role::find($data['role_id']);
+                    $newRoleSlug = $newRole?->slug;
+                } elseif (!empty($data['role'])) {
+                    $newRoleSlug = $data['role'];
+                }
+
+                // Prevent users from modifying their own role or permissions
+                if ($actor && $actor->id === $user->id && $newRoleSlug && !$user->roles()->where('slug', $newRoleSlug)->exists()) {
+                    throw ValidationException::withMessages([
+                        'role' => ['You cannot modify your own assigned role or permissions.'],
+                    ]);
+                }
+
+                // Prevent non-super-admins from assigning the Super Administrator role
+                if ($newRoleSlug === UserRole::SUPER_ADMIN->value && (!$actor || !$actor->isSuperAdmin())) {
+                    throw ValidationException::withMessages([
+                        'role' => ['Only Super Administrators can grant the Super Administrator role.'],
                     ]);
                 }
             }
@@ -210,6 +272,9 @@ class UserService
 
             if (!empty($data['status'])) {
                 $update['status'] = $data['status'];
+                if (in_array($data['status'], ['suspended', 'inactive'])) {
+                    $user->tokens()->delete();
+                }
             }
 
             if (!empty($data['password'])) {
@@ -257,6 +322,12 @@ class UserService
      */
     public function deleteUser(User $user, ?User $actor = null): array
     {
+        if ($actor && !$actor->hasPermission('admin_users.manage')) {
+            throw ValidationException::withMessages([
+                'user' => ['Unauthorized. Insufficient permissions to delete users.'],
+            ]);
+        }
+
         if ($actor && $actor->id === $user->id) {
             throw ValidationException::withMessages([
                 'user' => ['You cannot delete your own account.'],
@@ -264,6 +335,12 @@ class UserService
         }
 
         if ($user->isSuperAdmin()) {
+            if ($actor && !$actor->isSuperAdmin()) {
+                throw ValidationException::withMessages([
+                    'user' => ['Only Super Administrators can delete a Super Administrator account.'],
+                ]);
+            }
+
             $otherSuperAdmins = User::whereHas('roles', fn ($q) => $q->where('slug', UserRole::SUPER_ADMIN->value))
                 ->where('id', '!=', $user->id)
                 ->where('status', 'active')
@@ -277,6 +354,9 @@ class UserService
         }
 
         $hasOrders = $user->orders()->exists();
+
+        // Revoke all personal access tokens immediately
+        $user->tokens()->delete();
 
         // Always soft delete to preserve database foreign key integrity
         $user->update(['status' => 'suspended']);
@@ -306,27 +386,46 @@ class UserService
      */
     public function toggleUserStatus(User $user, ?User $actor = null): string
     {
+        if ($actor && !$actor->hasPermission('admin_users.manage')) {
+            throw ValidationException::withMessages([
+                'status' => ['Unauthorized. Insufficient permissions to modify user status.'],
+            ]);
+        }
+
         if ($actor && $actor->id === $user->id) {
             throw ValidationException::withMessages([
                 'status' => ['You cannot deactivate or suspend your own account.'],
             ]);
         }
 
-        if ($user->isSuperAdmin() && $user->status === 'active') {
-            $otherSuperAdmins = User::whereHas('roles', fn ($q) => $q->where('slug', UserRole::SUPER_ADMIN->value))
-                ->where('id', '!=', $user->id)
-                ->where('status', 'active')
-                ->exists();
-
-            if (!$otherSuperAdmins) {
+        if ($user->isSuperAdmin()) {
+            if ($actor && !$actor->isSuperAdmin()) {
                 throw ValidationException::withMessages([
-                    'status' => ['Cannot suspend the only Super Administrator in the system.'],
+                    'status' => ['Only Super Administrators can alter a Super Administrator status.'],
                 ]);
+            }
+
+            if ($user->status === 'active') {
+                $otherSuperAdmins = User::whereHas('roles', fn ($q) => $q->where('slug', UserRole::SUPER_ADMIN->value))
+                    ->where('id', '!=', $user->id)
+                    ->where('status', 'active')
+                    ->exists();
+
+                if (!$otherSuperAdmins) {
+                    throw ValidationException::withMessages([
+                        'status' => ['Cannot suspend the only Super Administrator in the system.'],
+                    ]);
+                }
             }
         }
 
         $newStatus = $user->status === 'active' ? 'suspended' : 'active';
         $user->update(['status' => $newStatus]);
+
+        // Revoke active tokens immediately if account was suspended
+        if ($newStatus === 'suspended') {
+            $user->tokens()->delete();
+        }
 
         ActivityLog::log(
             'user.status_toggled',

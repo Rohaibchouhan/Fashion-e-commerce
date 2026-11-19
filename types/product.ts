@@ -31,6 +31,20 @@ export interface ProductReview {
   verified: boolean;
 }
 
+export interface RatingBreakdownItem {
+  star: number;
+  count: number;
+  percentage: number;
+}
+
+export interface RatingStats {
+  averageRating: number;
+  totalCount: number;
+  counts: Record<string, number>;
+  percentages: Record<string, number>;
+  breakdown: RatingBreakdownItem[];
+}
+
 export type ProductGender = "men" | "women" | "unisex";
 
 export interface Product {
@@ -50,6 +64,7 @@ export interface Product {
   isTrending?: boolean;
   rating: number;
   reviewCount: number;
+  ratingStats?: RatingStats;
   images: string[];
   colors: ProductColor[];
   sizes: ProductSize[];
@@ -60,6 +75,7 @@ export interface Product {
   fit: string;
   inStock: boolean;
   outfitPairings?: string[]; // IDs or slugs of pairing items
+  reviews?: ProductReview[];
 }
 
 export interface ProductFilterParams {

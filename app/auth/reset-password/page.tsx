@@ -34,7 +34,7 @@ function ResetPasswordContent() {
 
     try {
       setIsLoading(true);
-      await AuthService.resetPassword(token, password, email);
+      await AuthService.resetPassword(token, password, email, confirmPassword);
       setSuccess(true);
       toast.success("Password Updated", "You can now log in with your new password.");
     } catch (err: any) {

@@ -8,6 +8,7 @@ use App\Models\Exchange;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Refund;
+use App\Models\RefundTransaction;
 use App\Models\ReturnItem;
 use App\Models\ReturnRequest;
 use App\Models\Setting;
@@ -202,7 +203,20 @@ class ReturnService
             ]);
 
             if ($payment) {
-                $this->paymentService->refundPayment($payment, $amount, "Return RMA #{$returnRequest->rma_number}");
+                $res = $this->paymentService->refundPayment($payment, $amount, "Return RMA #{$returnRequest->rma_number}", $refundNumber);
+                $refund->update([
+                    'status' => 'processed',
+                    'gateway_refund_id' => $res['refund_id'] ?? null,
+                    'processed_at' => now(),
+                ]);
+                RefundTransaction::create([
+                    'refund_id' => $refund->id,
+                    'amount' => $amount,
+                    'gateway' => $payment->payment_method ?? 'card',
+                    'reference' => $res['refund_id'] ?? null,
+                    'status' => 'success',
+                    'response_payload' => $res,
+                ]);
             }
 
             $prevStatus = $returnRequest->status->value;

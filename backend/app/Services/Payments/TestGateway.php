@@ -119,15 +119,20 @@ class TestGateway implements PaymentGatewayInterface
         ];
     }
 
-    public function processRefund(Payment $payment, float $amount, ?string $reason = null): array
+    public function processRefund(Payment $payment, float $amount, ?string $reason = null, ?string $idempotencyKey = null): array
     {
         if (app()->environment('production')) {
             throw new Exception("Test payment gateway is strictly forbidden in production.");
         }
 
+        $refundId = $idempotencyKey
+            ? 'REF-TEST-' . strtoupper(substr(md5($idempotencyKey), 0, 10))
+            : 'REF-TEST-' . Str::upper(Str::random(8));
+
         return [
             'success' => true,
-            'refund_id' => 'REF-TEST-' . Str::upper(Str::random(8)),
+            'refund_id' => $refundId,
+            'idempotency_key' => $idempotencyKey,
             'message' => "Sandbox test refund of \${$amount} recorded successfully.",
             'is_test' => true,
         ];

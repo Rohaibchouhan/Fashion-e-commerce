@@ -29,6 +29,7 @@ export const MiniCartDrawer: React.FC = () => {
 
   const [couponCode, setCouponCode] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   const subtotal = getSubtotal();
   const discount = getDiscount();
@@ -45,12 +46,15 @@ export const MiniCartDrawer: React.FC = () => {
 
     try {
       setCouponLoading(true);
+      setCouponError(null);
       const res = await CartService.applyCoupon(couponCode);
       applyCoupon(res.coupon);
       toast.success("Coupon Applied!", `${res.coupon.description}`);
       setCouponCode("");
     } catch (err: any) {
-      toast.error("Invalid Promo Code", err.message || "Please check the code and try again.");
+      const errorMsg = err.message || "Invalid coupon code. Please try again.";
+      setCouponError(errorMsg);
+      toast.error("Invalid Promo Code", errorMsg);
     } finally {
       setCouponLoading(false);
     }
@@ -85,22 +89,32 @@ export const MiniCartDrawer: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Promo code (e.g. WEARDAY15)"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value)}
-                  className="flex-1 text-xs px-3.5 py-2.5 bg-white border border-neutral-300 rounded-xl uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-neutral-900"
-                />
-                <button
-                  type="submit"
-                  disabled={couponLoading || !couponCode.trim()}
-                  className="px-4 py-2.5 bg-neutral-900 text-white text-xs font-semibold rounded-xl hover:bg-neutral-800 disabled:opacity-50"
-                >
-                  {couponLoading ? "..." : "Apply"}
-                </button>
-              </form>
+              <div>
+                <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Promo code (e.g. WEARDAY15)"
+                    value={couponCode}
+                    onChange={(e) => {
+                      setCouponCode(e.target.value);
+                      if (couponError) setCouponError(null);
+                    }}
+                    className={`flex-1 text-xs px-3.5 py-2.5 bg-white border rounded-xl uppercase tracking-wider focus:outline-none focus:ring-1 focus:ring-neutral-900 ${
+                      couponError ? "border-rose-300 bg-rose-50/30" : "border-neutral-300"
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={couponLoading || !couponCode.trim()}
+                    className="px-4 py-2.5 bg-neutral-900 text-white text-xs font-semibold rounded-xl hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+                  >
+                    {couponLoading ? "..." : "Apply"}
+                  </button>
+                </form>
+                {couponError && (
+                  <p className="text-[11px] text-rose-600 font-medium mt-1.5 pl-1">{couponError}</p>
+                )}
+              </div>
             )}
 
             {/* Price Breakdown */}

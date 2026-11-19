@@ -35,5 +35,30 @@ class Shipment extends Model
     {
         return $this->hasMany(ShipmentEvent::class)->orderBy('occurred_at', 'desc');
     }
+
+    public function getTrackingUrlAttribute(): ?string
+    {
+        if (!$this->tracking_number) {
+            return null;
+        }
+
+        $carrier = strtolower($this->carrier ?? '');
+        $tracking = urlencode(trim($this->tracking_number));
+
+        if (str_contains($carrier, 'fedex')) {
+            return "https://www.fedex.com/fedextrack/?trknbr={$tracking}";
+        }
+        if (str_contains($carrier, 'ups')) {
+            return "https://www.ups.com/track?tracknum={$tracking}";
+        }
+        if (str_contains($carrier, 'usps')) {
+            return "https://tools.usps.com/go/TrackConfirmAction?tLabels={$tracking}";
+        }
+        if (str_contains($carrier, 'dhl')) {
+            return "https://www.dhl.com/en/express/tracking.html?AWB={$tracking}";
+        }
+
+        return null;
+    }
 }
 

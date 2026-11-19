@@ -1,0 +1,52 @@
+name: Continuous Integration & Automated Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-mysql-tests:
+    name: Laravel Tests (MySQL / MariaDB Only)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mariadb:10.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: fashion_ecommerce_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP Runtime
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_mysql, bcmath
+          coverage: none
+
+      - name: Install Composer Dependencies
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Verify Dedicated MySQL Test Database Connection
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -e "SELECT VERSION(); SELECT DATABASE();" fashion_ecommerce_test
+
+      - name: Run PHPUnit Test Suite (Strictly MySQL fashion_ecommerce_test)
+        working-directory: backend
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: fashion_ecommerce_test
+          DB_USERNAME: root
+          DB_PASSWORD: ""
+        run: php artisan test

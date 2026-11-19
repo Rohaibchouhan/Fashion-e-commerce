@@ -134,12 +134,13 @@ class InventoryRaceConditionTest extends TestCase
 
     public function test_restocking_returned_item_updates_inventory_and_logs_movement(): void
     {
+        $admin = \App\Models\User::factory()->create();
         $variant = ProductVariant::first();
         $inventory = $variant->inventory;
         $initialQty = $inventory->quantity;
 
         // Restock 1 resellable item
-        $this->inventoryService->restockReturnedItem(501, $variant->id, 1, 1);
+        $this->inventoryService->restockReturnedItem(501, $variant->id, 1, $admin->id);
 
         $inventory->refresh();
         $this->assertEquals($initialQty + 1, $inventory->quantity);
@@ -149,6 +150,7 @@ class InventoryRaceConditionTest extends TestCase
             'type' => 'return_restock',
             'quantity_change' => 1,
             'reference_id' => '501',
+            'user_id' => $admin->id,
         ]);
     }
 }

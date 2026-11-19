@@ -35,6 +35,7 @@ class RolePermissionSeeder extends Seeder
             // Payments & Refunds
             ['name' => 'View Payments', 'slug' => 'payments.view', 'module' => 'payments'],
             ['name' => 'Process Refunds', 'slug' => 'refunds.process', 'module' => 'payments'],
+            ['name' => 'Retry Failed Refunds', 'slug' => 'refunds.retry', 'module' => 'payments'],
 
             // Returns
             ['name' => 'View Returns', 'slug' => 'returns.view', 'module' => 'returns'],

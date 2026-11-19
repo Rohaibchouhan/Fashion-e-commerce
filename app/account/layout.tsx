@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
@@ -22,9 +22,29 @@ import { cn } from "@/lib/utils";
 
 export default function AccountLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, isAuthenticated, logout } = useAuthStore();
   const unreadCount = useNotificationStore((s) => s.getUnreadCount());
   const wishlistCount = useWishlistStore((s) => s.items.length);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !isAuthenticated) {
+      router.push(`/auth/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+  }, [mounted, isAuthenticated, pathname, router]);
+
+  if (!mounted || !isAuthenticated) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center">
+        <p className="text-xs text-neutral-400">Loading your account...</p>
+      </div>
+    );
+  }
 
   const menuItems = [
     { label: "Overview", href: "/account", icon: LayoutDashboard },

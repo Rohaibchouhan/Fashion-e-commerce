@@ -3,9 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\ProductVariant;
 use App\Models\User;
 use App\Services\CheckoutService;
+use App\Services\OrderService;
 use App\Services\PaymentService;
 use Exception;
 use Illuminate\Console\Command;
@@ -13,16 +15,23 @@ use Illuminate\Console\Command;
 class ConcurrencyWorkerCommand extends Command
 {
     protected $signature = 'ecommerce:concurrency-worker
-                            {action : checkout or confirm}
-                            {--key= : Idempotency key for checkout}
+                            {action : checkout, confirm, cancel, or refund}
+                            {--key= : Idempotency key for checkout or refund}
                             {--variant= : Variant ID for checkout}
-                            {--order= : Order ID for confirmation}
+                            {--order= : Order ID for confirmation or cancellation}
+                            {--payment= : Payment ID for refund}
+                            {--amount= : Amount for refund}
                             {--txn= : Transaction reference for confirmation}
+                            {--reason= : Reason for cancellation}
                             {--wait-until= : Unix timestamp with microsecond to synchronize execution}';
 
     protected $description = 'Worker process for genuine simultaneous concurrency testing on real MySQL';
 
-    public function handle(CheckoutService $checkoutService, PaymentService $paymentService): int
+    public function handle(
+        CheckoutService $checkoutService,
+        PaymentService $paymentService,
+        OrderService $orderService
+    ): int
     {
         $action = $this->argument('action');
         $waitUntil = (float) $this->option('wait-until');
@@ -74,6 +83,39 @@ class ConcurrencyWorkerCommand extends Command
                     'success' => true,
                     'order_id' => $order->id,
                     'payment_status' => $payment->status->value,
+                ]));
+                return 0;
+            }
+
+            if ($action === 'cancel') {
+                $orderId = (int) $this->option('order');
+                $reason = $this->option('reason') ?: 'Concurrency cancellation test';
+                $order = Order::findOrFail($orderId);
+                $user = User::where('status', 'active')->firstOrFail();
+
+                $cancelledOrder = $orderService->cancelOrder($order, $reason, $user);
+                $this->line(json_encode([
+                    'success' => true,
+                    'order_id' => $cancelledOrder->id,
+                    'order_status' => $cancelledOrder->status->value,
+                    'payment_status' => $cancelledOrder->payment_status->value,
+                ]));
+                return 0;
+            }
+
+            if ($action === 'refund') {
+                $paymentId = (int) $this->option('payment');
+                $amount = (float) $this->option('amount');
+                $key = $this->option('key');
+                $payment = Payment::findOrFail($paymentId);
+
+                $result = $paymentService->refundPayment($payment, $amount, 'Simultaneous concurrency refund test', $key);
+                $this->line(json_encode([
+                    'success' => true,
+                    'payment_id' => $payment->id,
+                    'amount' => $amount,
+                    'refund_id' => $result['refund_id'] ?? null,
+                    'idempotent_replay' => $result['idempotent_replay'] ?? false,
                 ]));
                 return 0;
             }

@@ -17,7 +17,7 @@ class ProductResource extends JsonResource
                 $colors[$v->color] = [
                     'name' => $v->color,
                     'hex' => $v->color_hex ?? '#000000',
-                    'image' => $v->image,
+                    'image' => $v->image ? (str_starts_with($v->image, 'http') ? $v->image : url($v->image)) : null,
                 ];
             }
 
@@ -48,6 +48,7 @@ class ProductResource extends JsonResource
             'isTrending' => $this->is_trending,
             'rating' => (float) $this->rating,
             'reviewCount' => (int) $this->review_count,
+            'ratingStats' => $this->calculateReviewStats(),
             'images' => $this->images->map(function ($img) {
                 if (str_starts_with($img->url, 'http://') || str_starts_with($img->url, 'https://')) {
                     return $img->url;
@@ -72,6 +73,18 @@ class ProductResource extends JsonResource
             'fit' => $this->fit ?? '',
             'inStock' => $this->in_stock,
             'outfitPairings' => $this->outfit_pairings ?? [],
+            'reviews' => ($this->relationLoaded('reviews')
+                ? $this->reviews->where('is_approved', true)->take(10)
+                : $this->reviews()->where('is_approved', true)->latest()->take(10)->with('user')->get()
+            )->map(fn ($r) => [
+                'id' => (string) $r->id,
+                'author' => $r->user?->name ?? 'Verified Buyer',
+                'rating' => (int) $r->rating,
+                'date' => $r->created_at->format('M d, Y'),
+                'title' => $r->title,
+                'comment' => $r->comment,
+                'verified' => (bool) $r->is_verified_purchase,
+            ])->values()->toArray(),
         ];
     }
 }

@@ -860,16 +860,20 @@ class CheckoutService
         });
 
         $shippingMethod = strtolower(trim((string) ($payload['shippingMethodId'] ?? $payload['shipping_method_id'] ?? 'standard')));
-        $paymentDetails = $payload['payment'] ?? [];
-        $paymentMethod = strtolower(trim((string) (
-            $paymentDetails['method']
-            ?? $paymentDetails['type']
-            ?? $payload['paymentMethod']
-            ?? $payload['payment_method']
-            ?? $payload['paymentMethodId']
-            ?? $payload['payment_type']
-            ?? 'card'
-        )));
+        
+        $rawPayment = $payload['payment'] ?? $payload['paymentMethod'] ?? $payload['payment_method'] ?? null;
+        $paymentType = 'card';
+        if (is_array($rawPayment)) {
+            $paymentType = $rawPayment['type'] ?? $rawPayment['method'] ?? 'card';
+        } elseif (!empty($rawPayment)) {
+            $paymentType = $rawPayment;
+        } elseif (!empty($payload['paymentMethodId'])) {
+            $paymentType = $payload['paymentMethodId'];
+        } elseif (!empty($payload['payment_type'])) {
+            $paymentType = $payload['payment_type'];
+        }
+        $paymentMethod = strtolower(trim((string) $paymentType));
+
         $couponCode = strtoupper(trim((string) ($payload['couponCode'] ?? $payload['coupon_code'] ?? '')));
 
         // Recursively sort associative array keys so key order differences never produce hash mismatches

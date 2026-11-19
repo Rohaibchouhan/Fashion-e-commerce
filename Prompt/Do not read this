@@ -1,0 +1,1730 @@
+# WearDay — Payment Operations & Gateway Management
+## Detailed Technical Specification and Antigravity Implementation Roadmap
+
+**Project:** WearDay  
+**Backend:** Laravel 12 / PHP 8.2  
+**Frontend:** Next.js 16 / React 19 / TypeScript  
+**Database:** MySQL  
+**Admin:** Existing Laravel Blade dashboard  
+**Storefront:** Existing Next.js application  
+**Gateway permissions:** Super Admin only  
+**Environments:** Test and Live  
+**Initial providers:** Stripe, PayPal, Bank Transfer, Cash on Delivery, Internal Test Gateway
+
+---
+
+# PART 1 — PRODUCT OBJECTIVE
+
+Build a centralized Payment Operations & Gateway Management System.
+
+A Super Admin must be able to:
+
+- Connect payment providers.
+- Configure test and live credentials separately.
+- Test provider connectivity.
+- Run sandbox payments and refunds.
+- Activate or deactivate payment methods.
+- Configure payment method availability.
+- Inspect transactions and payment attempts.
+- Process full and partial refunds.
+- Retry eligible failed refunds.
+- Investigate uncertain payment and refund outcomes.
+- Monitor webhook delivery.
+- Run and inspect reconciliation.
+- Review payment-related security and administrative activity.
+
+The system must work with multiple providers without requiring checkout or order-management rewrites whenever a new provider is introduced.
+
+Laravel remains the single source of truth for payment, order, inventory, refund and transaction state.
+
+## Core design principles
+
+1. Provider-independent architecture.
+2. Provider-specific capabilities.
+3. Strict test/live isolation.
+4. Server-side payment verification.
+5. Durable payment and refund operations.
+6. Safe handling of uncertain outcomes.
+7. Database-backed idempotency.
+8. Secure credential storage.
+9. Complete financial audit history.
+10. MySQL-only automated verification.
+
+---
+
+# PART 2 — ADMIN DASHBOARD
+
+## 2.1 Payment Operations navigation
+
+Create a Payment Operations section in the existing admin dashboard.
+
+Required navigation:
+
+1. Payment Overview
+2. Payment Gateways
+3. Transactions
+4. Refund Management
+5. Reconciliation
+6. Webhook Events
+7. Gateway Activity Logs
+8. Payment Settings
+
+Do not redesign unrelated admin pages.
+
+## 2.2 Payment Overview
+
+Display:
+
+- Total successful payments.
+- Pending payments.
+- Failed payments.
+- Total refunded amount.
+- Pending refunds.
+- Uncertain refunds.
+- Reconciliation failures.
+- Webhook failures.
+- Active gateways.
+- Gateway connection health.
+
+Provide environment selection:
+
+- Test
+- Live
+
+Test transactions must never appear in live financial totals.
+
+Live and test data must be distinguishable throughout the interface.
+
+## 2.3 Payment Gateway Management
+
+Initially support five gateway types:
+
+| Gateway | Integration type | Test environment | Live environment |
+|---|---|---|---|
+| Stripe | External API | Provider sandbox | Provider live API |
+| PayPal | External API | PayPal sandbox | PayPal live API |
+| Bank Transfer | Manual/offline | Test workflow | Manual settlement |
+| Cash on Delivery | Manual/offline | Test workflow | Operational COD |
+| Test Gateway | Internal simulator | Enabled | Never permitted |
+
+Each gateway configuration must display:
+
+- Provider name.
+- Connection status.
+- Environment.
+- Enabled/disabled status.
+- Credential status.
+- Last connection test.
+- Last successful transaction.
+- Supported payment methods.
+- Supported currencies.
+- Supported capabilities.
+- Webhook configuration status.
+- Last error, with secrets and sensitive information redacted.
+
+## 2.4 Gateway configuration workflow
+
+For Stripe:
+
+- Publishable key.
+- Secret key.
+- Webhook signing secret.
+- Test/live environment.
+- Supported currencies.
+- Payment method settings.
+
+For PayPal:
+
+- Client ID.
+- Client secret.
+- Webhook ID.
+- Sandbox/live environment.
+- Supported currencies.
+- Payment method settings.
+
+For Bank Transfer:
+
+- Bank name.
+- Account title.
+- Account number or IBAN.
+- Instructions for customers.
+- Accepted currencies.
+- Payment reference requirements.
+- Manual verification settings.
+
+For COD:
+
+- Enabled status.
+- Eligible delivery regions.
+- Minimum and maximum order values.
+- COD availability by shipping method.
+- Optional COD fee.
+- Confirmation requirements.
+
+For Test Gateway:
+
+- Test-only activation.
+- Simulated success.
+- Simulated failure.
+- Simulated pending.
+- Simulated timeout.
+- Simulated uncertain refund.
+- Simulated duplicate webhook.
+- Simulated delayed response.
+
+The Test Gateway must never be available for live checkout or production payment processing.
+
+## 2.5 Connection workflow
+
+Every external gateway should support:
+
+1. Enter credentials.
+2. Save credentials securely.
+3. Validate credential format.
+4. Test provider connectivity.
+5. Retrieve supported provider capabilities where possible.
+6. Configure webhook.
+7. Verify webhook configuration.
+8. Run a sandbox payment.
+9. Run a sandbox refund.
+10. Activate the provider.
+
+Connection success must not automatically mean the gateway is ready for live transactions.
+
+Use separate statuses:
+
+- Not configured.
+- Credentials saved.
+- Connection verified.
+- Webhook verified.
+- Sandbox verified.
+- Live activation pending.
+- Live active.
+- Suspended.
+- Disconnected.
+
+---
+
+# PART 3 — ENVIRONMENT ARCHITECTURE
+
+## 3.1 Test and Live separation
+
+Stripe and PayPal must have separate test and live configurations.
+
+Never use the same credential record for both environments.
+
+Each environment must independently store:
+
+- Encrypted credentials.
+- Provider account identifiers.
+- Webhook configuration.
+- Activation status.
+- Connection status.
+- Supported capabilities.
+- Audit history.
+
+A test-mode transaction must never be processed through live credentials.
+
+A live-mode transaction must never be processed through test credentials.
+
+## 3.2 Live activation
+
+Only Super Admin can activate a live gateway.
+
+Before activation:
+
+- Credentials must be validated.
+- Merchant eligibility must be confirmed.
+- Webhook configuration must be verified.
+- Provider capabilities must be verified.
+- Required sandbox tests must pass.
+- A live activation confirmation must be completed.
+
+Use an explicit confirmation screen that explains the consequences.
+
+Test Gateway must be permanently blocked from live activation.
+
+## 3.3 Environment isolation
+
+Every payment, refund, transaction, webhook and reconciliation record must include the correct environment.
+
+Test and live reporting must be separated.
+
+Test payments must not:
+
+- Increase live revenue.
+- Trigger live fulfillment.
+- Deduct live inventory.
+- Create real refunds.
+- Affect real customer payment history.
+
+Use explicit test-mode safeguards throughout the application, not only in the dashboard.
+
+---
+
+# PART 4 — BACKEND ARCHITECTURE
+
+## 4.1 Provider architecture
+
+Implement a provider-independent architecture.
+
+Suggested structure:
+
+app/
+  Services/
+    Payments/
+      Contracts/
+        PaymentGatewayInterface.php
+        RefundGatewayInterface.php
+      Managers/
+        PaymentGatewayManager.php
+      DTOs/
+        PaymentResult.php
+        RefundResult.php
+        GatewayCapabilities.php
+      Providers/
+        Stripe/
+          StripeGateway.php
+          StripeWebhookHandler.php
+          StripeRefundService.php
+        PayPal/
+          PayPalGateway.php
+          PayPalWebhookHandler.php
+          PayPalRefundService.php
+        BankTransfer/
+          BankTransferGateway.php
+        Cod/
+          CodGateway.php
+        Test/
+          TestGateway.php
+      Services/
+        PaymentService.php
+        RefundService.php
+        ReconciliationService.php
+        WebhookService.php
+        PaymentAttemptService.php
+        PaymentOutboxService.php
+
+This is a proposed organization. Inspect existing classes and reuse compatible implementations rather than duplicating or rewriting them.
+
+## 4.2 Gateway interface
+
+Every provider should implement a common contract.
+
+Required operations should cover:
+
+- Credential validation.
+- Connection testing.
+- Payment initiation.
+- Payment verification.
+- Payment status lookup.
+- Refund initiation.
+- Refund status lookup.
+- Webhook signature verification.
+- Webhook event processing.
+- Capability reporting.
+
+Do not force unsupported capabilities into a provider.
+
+For example, if a provider does not support refund lookup, report that capability as unsupported.
+
+Never pretend that all providers support identical functionality.
+
+## 4.3 Gateway capabilities
+
+Each gateway must explicitly declare:
+
+- Supports authorization.
+- Supports capture.
+- Supports full refunds.
+- Supports partial refunds.
+- Supports external idempotency.
+- Supports refund status lookup.
+- Supports payment status lookup.
+- Supports webhook verification.
+- Supports automatic settlement.
+- Supported currencies.
+- Supported payment methods.
+
+The checkout and refund services must respect these capabilities.
+
+## 4.4 Provider selection
+
+Create a central PaymentGatewayManager.
+
+It must:
+
+- Resolve the selected provider.
+- Resolve the correct environment.
+- Load the correct encrypted credentials.
+- Check activation status.
+- Check provider capability.
+- Prevent test/live mismatch.
+- Reject unsupported operations.
+- Never expose credentials to the storefront.
+
+Checkout must continue using Laravel as the authoritative source of payment state.
+
+---
+
+# PART 5 — DATABASE ARCHITECTURE
+
+Inspect existing tables before creating migrations.
+
+Reuse existing payment, refund and transaction tables where appropriate.
+
+Do not create duplicate financial records or duplicate payment systems.
+
+Potential required structures:
+
+## 5.1 payment_gateways
+
+- id
+- provider
+- display_name
+- is_enabled
+- created_at
+- updated_at
+
+## 5.2 payment_gateway_configurations
+
+- id
+- payment_gateway_id
+- environment
+- encrypted_credentials
+- merchant_reference
+- configuration_status
+- connection_verified_at
+- webhook_verified_at
+- activated_at
+- activated_by
+- created_at
+- updated_at
+
+Unique constraint:
+
+payment_gateway_id + environment
+
+## 5.3 payment_gateway_capabilities
+
+Store provider-specific capability information.
+
+- gateway_configuration_id
+- supports_authorization
+- supports_capture
+- supports_partial_refunds
+- supports_refund_lookup
+- supports_payment_lookup
+- supports_external_idempotency
+- supports_webhooks
+- supported_currencies
+
+Capabilities must be based on actual provider behavior and documentation.
+
+## 5.4 payment_attempts
+
+Track each payment initiation and verification attempt.
+
+- id
+- payment_id
+- attempt_uuid
+- gateway
+- environment
+- idempotency_key
+- provider_reference
+- amount
+- currency
+- status
+- failure_code
+- sanitized_response
+- created_at
+- updated_at
+
+## 5.5 refund_attempts
+
+Persist every refund attempt independently.
+
+- id
+- refund_id
+- attempt_uuid
+- idempotency_key
+- provider_refund_reference
+- amount
+- currency
+- status
+- failure_code
+- sanitized_response
+- requested_at
+- dispatched_at
+- completed_at
+- created_at
+- updated_at
+
+Use stable UUIDs and appropriate unique constraints.
+
+Never use MD5-generated local references as a substitute for provider idempotency.
+
+## 5.6 payment_outbox
+
+Persist operations that must be dispatched after a database transaction commits.
+
+- id
+- event_uuid
+- event_type
+- aggregate_type
+- aggregate_id
+- payload
+- status
+- attempts
+- available_at
+- processed_at
+- last_error
+- created_at
+- updated_at
+
+Use database-backed dispatch so an application crash cannot silently lose a committed operation.
+
+## 5.7 webhook_events
+
+- id
+- gateway
+- environment
+- provider_event_id
+- event_type
+- signature_verified
+- processing_status
+- received_at
+- processed_at
+- sanitized_payload
+- error_message
+
+Unique constraint:
+
+gateway + environment + provider_event_id
+
+Store sufficient information to investigate and replay eligible events safely.
+
+## 5.8 gateway_audit_logs
+
+Track:
+
+- Credential creation.
+- Credential replacement.
+- Credential rotation.
+- Gateway connection.
+- Gateway disconnection.
+- Test/live activation.
+- Gateway enable/disable.
+- Webhook configuration changes.
+- Manual payment verification.
+- Refund retry.
+- Reconciliation actions.
+
+Record the Super Admin responsible for each action.
+
+Never store plaintext credentials in audit logs.
+
+---
+
+# PART 6 — PAYMENT PROCESSING
+
+## 6.1 Payment lifecycle
+
+Support a consistent internal lifecycle:
+
+- CREATED
+- PENDING
+- REQUIRES_ACTION
+- AUTHORIZED
+- PROCESSING
+- PAID
+- FAILED
+- CANCELLED
+- EXPIRED
+
+Map provider-specific statuses to internal states without losing the original provider status.
+
+Only a verified provider result or authorized manual settlement can establish a successful payment.
+
+Never trust frontend success callbacks.
+
+## 6.2 Checkout integration
+
+Preserve the existing checkout architecture.
+
+The server must:
+
+1. Validate the order.
+2. Recalculate amount, discounts, shipping and tax.
+3. Verify inventory availability.
+4. Resolve the selected gateway.
+5. Verify environment and activation.
+6. Create a durable payment attempt.
+7. Initiate provider payment.
+8. Verify payment through a trusted provider response or webhook.
+9. Commit inventory and order state exactly once.
+10. Record the complete payment lifecycle.
+
+Preserve existing idempotency and inventory reservation behavior.
+
+Do not reserve inventory twice or commit it on an unverified payment.
+
+---
+
+# PART 7 — REFUND RELIABILITY
+
+## 7.1 Refund lifecycle
+
+Support:
+
+- REQUESTED
+- PENDING
+- DISPATCHED
+- PROCESSING
+- SUCCEEDED
+- FAILED
+- UNKNOWN
+- CANCELLED
+
+Do not automatically convert an unknown outcome into a confirmed failure.
+
+## 7.2 Durable refund workflow
+
+Use this execution sequence:
+
+1. Validate the refund request.
+2. Lock the relevant payment/refund records.
+3. Check remaining refundable balance.
+4. Generate or retrieve a stable refund UUID.
+5. Persist the refund attempt.
+6. Persist an outbox event.
+7. Commit the database transaction.
+8. Dispatch the provider request outside the transaction.
+9. Pass a provider-supported idempotency key when available.
+10. Persist the provider reference and response.
+11. Update refund/payment state after verified results.
+12. Reconcile uncertain results.
+
+Do not keep database row locks open while waiting for external HTTP requests.
+
+Do not assume an HTTP timeout means the provider rejected the refund.
+
+## 7.3 Retry rules
+
+Allow retry only when:
+
+- The previous attempt is confirmed failed, or
+- The provider confirms that the previous attempt was not processed, or
+- A provider-supported idempotency mechanism makes repeating the same request safe.
+
+For uncertain outcomes:
+
+- Mark the attempt UNKNOWN.
+- Query provider status when supported.
+- Wait for a verified webhook when appropriate.
+- Reconcile before retrying.
+
+## 7.4 Refund reconciliation
+
+Implement a scheduled command:
+
+ecommerce:reconcile-refunds
+
+It should:
+
+- Identify pending or uncertain refund attempts.
+- Query the actual provider when lookup is supported.
+- Verify the provider result.
+- Update local records consistently.
+- Avoid duplicate refunds.
+- Log every reconciliation attempt.
+- Apply retry limits and backoff.
+- Alert administrators when manual intervention is required.
+
+Do not invent provider lookup endpoints.
+
+For unsupported provider lookup, use an explicit manual reconciliation state.
+
+---
+
+# PART 8 — WEBHOOK MANAGEMENT
+
+Every external provider must have its own webhook handler.
+
+Requirements:
+
+- Verify provider signatures.
+- Verify timestamps where supported.
+- Use raw request bodies for signature validation where required.
+- Reject invalid signatures.
+- Deduplicate provider event IDs.
+- Prevent replay attacks.
+- Store sanitized event records.
+- Process events idempotently.
+- Handle out-of-order events.
+- Log failures.
+- Support safe replay of eligible failed events.
+
+Required event categories:
+
+- Payment succeeded.
+- Payment failed.
+- Payment pending.
+- Payment cancelled.
+- Refund succeeded.
+- Refund failed.
+- Refund pending.
+- Refund updated.
+
+Use actual provider event types and documented signature requirements.
+
+Do not fabricate Stripe or PayPal webhook event formats.
+
+---
+
+# PART 9 — BANK TRANSFER AND COD
+
+## 9.1 Bank Transfer
+
+Bank Transfer is an offline/manual settlement method, not an automatic card gateway.
+
+Customer workflow:
+
+1. Select Bank Transfer.
+2. Create a pending order/payment.
+3. Display bank details and payment reference.
+4. Customer submits payment proof or reference.
+5. Authorized Super Admin verifies settlement.
+6. Payment becomes paid.
+7. Inventory/order workflow continues exactly once.
+
+Payment proof submission must not automatically establish payment success.
+
+Keep verification history.
+
+## 9.2 Cash on Delivery
+
+COD is an operational payment method.
+
+Customer workflow:
+
+1. Select COD.
+2. Validate COD availability for address and shipping method.
+3. Create the order with pending COD collection.
+4. Dispatch order.
+5. Record collection confirmation.
+6. Mark payment paid only after authorized collection confirmation.
+
+Support failed delivery and uncollected COD orders.
+
+Do not treat COD order creation as payment collection.
+
+---
+
+# PART 10 — SECURITY AND PERMISSIONS
+
+## 10.1 Access control
+
+Only Super Admin can:
+
+- Add or edit gateway credentials.
+- Connect or disconnect providers.
+- Test credentials.
+- Activate or deactivate gateways.
+- Switch live mode.
+- Configure webhooks.
+- Run sensitive reconciliation actions.
+- Perform manual settlement verification.
+- Retry eligible refunds.
+
+Other users must not access gateway configuration endpoints.
+
+Enforce authorization in Laravel middleware and controllers, not only by hiding dashboard navigation.
+
+## 10.2 Credential security
+
+- Use Laravel encrypted storage.
+- Never expose secrets in API responses.
+- Never put secret keys in frontend localStorage.
+- Never log plaintext credentials.
+- Mask credential values in the UI.
+- Support credential rotation.
+- Separate test and live credentials.
+- Prevent credentials from appearing in exceptions.
+- Do not store provider secrets in source code or committed environment files.
+
+## 10.3 Live payment safeguards
+
+- Test Gateway cannot operate in production.
+- Test credentials cannot process live payments.
+- Live credentials cannot process sandbox transactions.
+- Require Super Admin confirmation before activation.
+- Prevent deactivation while unresolved financial operations need the gateway, unless a safe migration procedure exists.
+- Preserve historical transaction access after disconnection.
+
+---
+
+# PART 11 — MONITORING AND REPORTING
+
+Provide:
+
+## Gateway health
+
+- Last successful connection.
+- Last failed connection.
+- API response time.
+- Recent errors.
+- Webhook delivery health.
+- Credential status.
+
+## Transaction monitoring
+
+- Payment ID.
+- Order ID.
+- Gateway.
+- Environment.
+- Amount.
+- Currency.
+- Provider reference.
+- Internal status.
+- Provider status.
+- Created date.
+- Last update.
+
+## Refund monitoring
+
+- Refund ID.
+- Original payment.
+- Amount.
+- Remaining refundable amount.
+- Attempt count.
+- Provider reference.
+- Current status.
+- Last error.
+- Next reconciliation time.
+
+## Operational alerts
+
+Alert Super Admin when:
+
+- Gateway connection fails.
+- Webhook verification fails repeatedly.
+- Refund outcome becomes unknown.
+- Reconciliation repeatedly fails.
+- Payment status remains pending beyond the configured threshold.
+- Credential validation fails.
+- Provider capabilities change.
+
+Never expose sensitive provider response payloads in the dashboard.
+
+---
+
+# PART 12 — ACCEPTANCE CRITERIA
+
+The implementation is not complete until all applicable criteria pass.
+
+### Gateway management
+
+- All five initial gateway types are represented.
+- Stripe and PayPal have separate test/live configurations.
+- Bank Transfer and COD have correct manual settlement workflows.
+- Test Gateway is restricted to test environments.
+- Credentials are encrypted.
+- Super Admin authorization is enforced server-side.
+
+### Payments
+
+- Provider payment initiation works in sandbox.
+- Provider verification is server-side.
+- Invalid webhook signatures are rejected.
+- Duplicate events cannot process a payment twice.
+- Payment amounts and currencies are validated.
+- Inventory is committed exactly once.
+
+### Refunds
+
+- Full refunds work.
+- Partial refunds work.
+- Over-refunds are rejected.
+- Duplicate requests are idempotent.
+- Unknown outcomes are not blindly retried.
+- Provider references are persisted.
+- Reconciliation recovers verified provider states.
+- Database locks are not held during external HTTP calls.
+
+### Isolation
+
+- Test transactions never enter live reporting.
+- Test payments never trigger live fulfillment.
+- Test refunds cannot affect live payments.
+- Live activation is restricted to Super Admin.
+
+### Verification
+
+- Every PHPUnit and feature test uses MySQL.
+- Dedicated database is `fashion_ecommerce_test`.
+- Full Laravel suite passes on MySQL.
+- Concurrency tests use independent processes against MySQL.
+- Actual database engine and database name are reported.
+- No destructive test operation can touch development or production.
+
+### Production readiness
+
+Do not declare production-ready until genuine provider sandbox tests, webhook verification, refund recovery, credential security and operational procedures are verified.
+
+Merchant eligibility and live settlement must be independently confirmed.
+
+---
+
+# PART 13 — PHASED ANTIGRAVITY IMPLEMENTATION PROMPTS
+
+Execute these prompts in order.
+
+Do not combine phases. Complete the current phase, report results, and wait for approval before proceeding.
+
+---
+
+# PROMPT 0 — Existing Project Discovery and Architecture Audit
+
+## Objective
+
+Inspect the current WearDay payment architecture and produce a detailed implementation plan.
+
+READ-ONLY. Do not modify code.
+
+## Inspect
+
+- Existing payment services and gateway classes.
+- Payment interfaces.
+- Payment models and migrations.
+- Refund models and migrations.
+- Payment transactions.
+- OrderService and CheckoutService.
+- Inventory reservation and commitment logic.
+- Webhook controllers.
+- Refund controllers and views.
+- Admin navigation and permissions.
+- Existing TestGateway.
+- Laravel scheduler and commands.
+- Queue configuration.
+- Existing frontend payment integration.
+- Existing test suites.
+
+## Requirements
+
+Identify what already exists and what is missing.
+
+Do not rewrite existing working functionality.
+
+Produce:
+
+1. Existing architecture diagram.
+2. Existing payment lifecycle.
+3. Existing refund lifecycle.
+4. Current gateway capabilities.
+5. Missing database structures.
+6. Security gaps.
+7. Duplicate functionality risks.
+8. Required migrations.
+9. Required API endpoints.
+10. Required admin screens.
+11. Required tests.
+12. Phased implementation plan.
+
+Classify every requirement:
+
+- DONE
+- PARTIAL
+- MISSING
+- FAIL
+
+Do not invent provider integrations or claim that local gateway simulations are real provider integrations.
+
+## Mandatory database and testing rules
+
+- All automated tests must use MySQL.
+- Dedicated test database: `fashion_ecommerce_test`.
+- Never use SQLite, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Inspect `phpunit.xml`, `.env.testing`, `config/database.php`, test base classes, traits and CI configuration.
+- Verify actual MySQL version and database name.
+- Do not run tests if the dedicated test database cannot be verified.
+- Do not silently fall back to SQLite.
+- Report the actual engine and database name.
+
+Do not modify files. Report findings and wait for approval.
+
+---
+
+# PROMPT 1 — Payment Gateway Foundation
+
+## Objective
+
+Build the provider-independent Payment Gateway Manager.
+
+Do not integrate external providers yet.
+
+## Requirements
+
+Implement:
+
+1. Gateway Manager.
+2. Gateway interfaces.
+3. Provider capability DTOs.
+4. Payment result DTO.
+5. Refund result DTO.
+6. Environment resolution.
+7. Gateway configuration models.
+8. Required migrations.
+9. Encrypted credential storage.
+10. Test/live configuration separation.
+11. Super Admin authorization.
+12. Gateway activation and deactivation.
+13. Audit logging.
+
+Initial gateway types:
+
+- Stripe.
+- PayPal.
+- Bank Transfer.
+- COD.
+- Test Gateway.
+
+Create the architecture so future providers can be added without rewriting checkout.
+
+Preserve existing PaymentService and checkout behavior.
+
+Do not create fake Stripe or PayPal integrations.
+
+Do not expose credentials to the frontend.
+
+## Database requirements
+
+Use existing tables where possible.
+
+Add only missing structures.
+
+Enforce appropriate unique constraints for provider/environment combinations.
+
+Credential encryption must use Laravel's secure encryption facilities.
+
+Never log secret values.
+
+## Mandatory testing rules
+
+- PHPUnit and feature tests must use MySQL.
+- Dedicated database: `fashion_ecommerce_test`.
+- SQLite is prohibited, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Verify `SELECT VERSION()` and `SELECT DATABASE()`.
+- Run all tests against MySQL.
+- Run concurrency scenarios using independent processes against MySQL.
+- Report actual engine and database name.
+- Stop if MySQL is unavailable.
+
+## Deliverables
+
+- Gateway architecture.
+- Database migrations.
+- Gateway Manager.
+- Provider contracts.
+- Credential security.
+- Authorization.
+- Tests.
+- Implementation report.
+
+Do not begin Stripe or PayPal integration in this phase.
+
+---
+
+# PROMPT 2 — Stripe Sandbox Integration
+
+## Objective
+
+Integrate Stripe as the first genuine external payment provider.
+
+Use official Stripe documentation and the current supported SDK/API.
+
+Do not invent API endpoints or provider capabilities.
+
+## Requirements
+
+Implement:
+
+1. Stripe test credentials.
+2. Stripe connection testing.
+3. Stripe payment initiation.
+4. Server-side payment verification.
+5. Payment status retrieval.
+6. Stripe webhook signature verification.
+7. Webhook event persistence.
+8. Event deduplication.
+9. Payment idempotency.
+10. Stripe sandbox refunds.
+11. Partial refunds where supported.
+12. Refund status lookup where supported.
+13. Provider refund references.
+14. Credential masking.
+15. Secure error handling.
+
+Use Stripe's documented idempotency mechanism for supported operations.
+
+Persist stable internal idempotency identifiers before sending requests.
+
+Never assume a locally generated reference is a Stripe idempotency key.
+
+Never expose the Stripe secret key to Next.js.
+
+## Test scenarios
+
+- Successful sandbox payment.
+- Declined payment.
+- Pending payment.
+- Invalid credentials.
+- Invalid webhook signature.
+- Duplicate webhook.
+- Payment amount mismatch.
+- Currency mismatch.
+- Successful refund.
+- Partial refund.
+- Duplicate refund request.
+- Provider timeout.
+- Uncertain refund outcome.
+- Provider refund status lookup.
+
+Do not use live credentials or real money.
+
+Do not activate live Stripe payments.
+
+## Mandatory testing rules
+
+- MySQL only.
+- Dedicated database: `fashion_ecommerce_test`.
+- Never use SQLite, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Full Laravel suite must run on MySQL.
+- Concurrency tests must use independent processes against MySQL.
+- Verify actual database engine and database name.
+- Stop if MySQL is unavailable.
+
+## Deliverables
+
+Report actual Stripe API integration evidence, SDK/API version, supported capabilities, sandbox test results, webhook verification and remaining limitations.
+
+---
+
+# PROMPT 3 — PayPal Sandbox Integration
+
+## Objective
+
+Implement PayPal as the second genuine external payment provider.
+
+Use current official PayPal documentation and the appropriate supported API.
+
+## Requirements
+
+Implement:
+
+1. Sandbox credentials.
+2. Connection verification.
+3. Payment/order creation.
+4. Server-side payment capture or verification.
+5. Payment status lookup.
+6. Webhook verification.
+7. Webhook event deduplication.
+8. Refund processing.
+9. Partial refunds where supported.
+10. Refund status lookup where supported.
+11. Provider reference persistence.
+12. External idempotency where documented.
+13. Credential masking.
+14. Secure error handling.
+
+Do not assume PayPal follows Stripe's API or idempotency behavior.
+
+Implement provider-specific behavior behind the common gateway interface.
+
+Do not modify Stripe functionality unnecessarily.
+
+## Test scenarios
+
+- Successful sandbox payment.
+- Failed payment.
+- Pending payment.
+- Invalid webhook.
+- Duplicate webhook.
+- Duplicate capture.
+- Full refund.
+- Partial refund.
+- Duplicate refund.
+- Timeout.
+- Uncertain refund.
+- Provider status lookup.
+
+No live credentials or real money.
+
+## Mandatory testing rules
+
+- PHPUnit and feature tests must use MySQL.
+- Database: `fashion_ecommerce_test`.
+- SQLite is strictly prohibited, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Run the full Laravel suite on MySQL.
+- Use independent MySQL processes for concurrency tests.
+- Verify and report actual database engine and name.
+- Stop if MySQL is unavailable.
+
+## Deliverables
+
+Provide actual provider API evidence, tested capabilities, webhook results, refund results and unresolved production limitations.
+
+---
+
+# PROMPT 4 — Bank Transfer and COD Operations
+
+## Objective
+
+Complete the operational payment workflows for Bank Transfer and Cash on Delivery.
+
+These are manual/offline payment methods, not fake external API gateways.
+
+## Bank Transfer
+
+Implement:
+
+- Customer payment instructions.
+- Payment reference.
+- Payment proof submission where required.
+- Admin payment verification.
+- Rejection and resubmission workflow where appropriate.
+- Verification audit logs.
+- Duplicate verification protection.
+- Payment status transitions.
+- Order and inventory synchronization.
+
+Payment proof submission must never automatically mark an order paid.
+
+## COD
+
+Implement:
+
+- COD eligibility.
+- Delivery-region restrictions.
+- Order-value restrictions.
+- Optional COD fees.
+- COD collection status.
+- Collection confirmation.
+- Failed collection handling.
+- Return-to-origin handling where relevant.
+- Duplicate collection protection.
+
+Creating a COD order must not mark it paid.
+
+Only verified collection may establish successful COD payment.
+
+## Admin requirements
+
+Super Admin must be able to:
+
+- Enable or disable each method.
+- Configure its restrictions.
+- Review pending settlements.
+- Verify or reject payment submissions.
+- Inspect complete payment history.
+
+## Mandatory testing rules
+
+- MySQL only.
+- Dedicated test database: `fashion_ecommerce_test`.
+- Never use SQLite, including `:memory:`.
+- Never run destructive operations against development or production.
+- Full Laravel test suite on MySQL.
+- Independent-process concurrency tests on MySQL.
+- Report actual engine and database name.
+- Stop if MySQL is unavailable.
+
+## Deliverables
+
+Report bank settlement and COD workflows, authorization tests, order state synchronization and MySQL verification results.
+
+---
+
+# PROMPT 5 — Durable Refund Engine and Reconciliation
+
+## Objective
+
+Build the production-grade refund reliability architecture.
+
+This phase addresses the most serious existing payment architecture risk.
+
+## Requirements
+
+Implement a durable refund lifecycle.
+
+Use:
+
+- Stable internal refund UUIDs.
+- Refund attempt persistence.
+- Database-backed outbox.
+- Provider-specific idempotency.
+- Provider refund references.
+- Unknown outcome handling.
+- Safe retry policies.
+- Refund reconciliation.
+- Webhook-based refund updates.
+- Complete attempt history.
+
+## Transaction boundaries
+
+The correct sequence should be:
+
+1. Validate refund.
+2. Lock and validate payment/refund records.
+3. Persist refund intent and attempt.
+4. Persist outbox event.
+5. Commit MySQL transaction.
+6. Dispatch external request outside the database transaction.
+7. Persist provider response.
+8. Update local state based on verified provider results.
+
+Do not hold payment or refund row locks during external HTTP requests.
+
+Do not use distributed two-phase commit as a substitute for durable workflow design.
+
+## Unknown outcome handling
+
+If a request times out:
+
+- Mark the attempt UNKNOWN or PENDING_RECONCILIATION.
+- Do not immediately issue another refund.
+- Query the provider where supported.
+- Check for verified webhooks.
+- Reconcile before retrying.
+- Preserve the original idempotency key for safe retries where supported.
+
+## Reconciliation command
+
+Implement:
+
+`ecommerce:reconcile-refunds`
+
+Requirements:
+
+- Scheduled execution.
+- Safe locking.
+- Retry limits.
+- Backoff.
+- Provider status lookup.
+- Webhook reconciliation.
+- Audit logging.
+- Admin alerts.
+- No duplicate refunds.
+
+Unsupported provider lookup must be reported as a capability limitation.
+
+Do not invent provider endpoints.
+
+## Concurrency requirements
+
+Test:
+
+- Two simultaneous refunds against one payment.
+- Duplicate refund request.
+- Simultaneous refund retries.
+- Refund timeout and reconciliation.
+- Crash simulation between dispatch and persistence.
+- Duplicate webhook.
+- Over-refund protection.
+
+Use independent OS processes against the same MySQL test database.
+
+## Mandatory testing rules
+
+- MySQL only.
+- Database: `fashion_ecommerce_test`.
+- Never SQLite, including `:memory:`.
+- Never destructive migrations against development or production.
+- Full Laravel suite on MySQL.
+- Independent-process concurrency testing on MySQL.
+- Report actual engine and database name.
+- Stop if MySQL is unavailable.
+
+## Deliverables
+
+Report refund lifecycle, transaction boundaries, outbox recovery, provider idempotency, reconciliation results and all unresolved failure scenarios.
+
+---
+
+# PROMPT 6 — Admin Payment Operations Dashboard
+
+## Objective
+
+Build the complete payment management UI in the existing Laravel Blade admin dashboard.
+
+Do not replace the existing dashboard layout or redesign unrelated pages.
+
+## Required sections
+
+1. Payment Overview.
+2. Payment Gateways.
+3. Transactions.
+4. Refunds.
+5. Reconciliation.
+6. Webhook Events.
+7. Gateway Activity Logs.
+8. Payment Settings.
+
+## Gateway management UI
+
+Include:
+
+- Gateway connection cards.
+- Test/live configuration.
+- Credential entry and masking.
+- Connection testing.
+- Webhook verification.
+- Sandbox test payment.
+- Sandbox test refund.
+- Gateway activation.
+- Gateway deactivation.
+- Provider capabilities.
+- Last successful connection.
+- Last error.
+
+## Transaction UI
+
+Include:
+
+- Search.
+- Filters.
+- Environment.
+- Gateway.
+- Payment status.
+- Order reference.
+- Provider reference.
+- Amount.
+- Currency.
+- Date range.
+- Transaction detail page.
+
+## Refund UI
+
+Include:
+
+- Refund amount.
+- Remaining refundable balance.
+- Refund reason.
+- Full/partial refund.
+- Attempt history.
+- Provider refund reference.
+- Unknown/pending status.
+- Safe retry action.
+- Reconciliation status.
+
+## Reconciliation UI
+
+Include:
+
+- Pending reconciliation.
+- Successful reconciliation.
+- Failed reconciliation.
+- Manual review required.
+- Attempt history.
+- Last checked time.
+- Safe manual reconciliation action.
+
+## Access control
+
+Super Admin only.
+
+Enforce permissions server-side.
+
+Do not depend on hidden navigation items for security.
+
+## UI requirements
+
+- Reuse the existing WearDay design system.
+- Responsive layouts.
+- Consistent typography and spacing.
+- Clear status labels.
+- Confirmation dialogs for destructive or financial actions.
+- No secret values in page source or API responses.
+- No fake transaction data.
+
+## Mandatory testing rules
+
+- All automated tests use MySQL.
+- Database: `fashion_ecommerce_test`.
+- Never SQLite, including `:memory:`.
+- No destructive development/production migrations.
+- Run the full Laravel suite on MySQL.
+- Independent-process MySQL concurrency tests.
+- Report actual database engine and database name.
+
+## Deliverables
+
+Provide screenshots or browser evidence where available, endpoint verification, authorization test results, and a list of actual UI functions tested.
+
+Do not claim browser verification based only on HTTP requests.
+
+---
+
+# PROMPT 7 — Payment Security and Failure Testing
+
+## Objective
+
+Perform a security and reliability audit of the completed payment operations system.
+
+Start read-only.
+
+Do not make changes until findings are reported and approved.
+
+Inspect:
+
+- Gateway credentials.
+- Environment separation.
+- Payment initiation.
+- Payment verification.
+- Refund processing.
+- Outbox processing.
+- Reconciliation.
+- Webhooks.
+- Admin permissions.
+- Audit logs.
+- Payment reporting.
+- Test Gateway restrictions.
+
+## Attack and failure scenarios
+
+Test:
+
+1. Unauthorized gateway configuration.
+2. Unauthorized live activation.
+3. Credential exposure.
+4. Test/live credential mismatch.
+5. Test Gateway in production.
+6. Forged webhook.
+7. Duplicate webhook.
+8. Replayed webhook.
+9. Out-of-order webhook.
+10. Payment amount manipulation.
+11. Currency manipulation.
+12. Duplicate payment request.
+13. Duplicate refund request.
+14. Over-refund.
+15. Refund timeout.
+16. Application crash after provider success.
+17. Database failure after provider success.
+18. Concurrent refund retry.
+19. Reconciliation race.
+20. Gateway deactivation with unresolved transactions.
+
+No real money.
+
+Use provider sandbox environments and controlled test failures.
+
+## Mandatory testing rules
+
+- MySQL only.
+- Dedicated database: `fashion_ecommerce_test`.
+- SQLite strictly prohibited, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Full Laravel suite on MySQL.
+- Independent OS processes for concurrency tests.
+- Report actual engine and database name.
+- Stop if MySQL is unavailable.
+
+Report each finding with severity, evidence, code reference and remediation.
+
+Wait for approval before fixing findings.
+
+---
+
+# PROMPT 8 — Final Production Readiness Verification
+
+## Objective
+
+Determine whether WearDay Payment Operations is ready for production.
+
+This is a verification task, not an opportunity for unrelated implementation.
+
+## Verify
+
+- Stripe sandbox integration.
+- PayPal sandbox integration.
+- Bank Transfer workflow.
+- COD workflow.
+- Test Gateway restrictions.
+- Test/live isolation.
+- Credential encryption.
+- Super Admin authorization.
+- Webhook verification.
+- Payment idempotency.
+- Refund idempotency.
+- Refund outbox.
+- Reconciliation.
+- Unknown outcome recovery.
+- Duplicate event handling.
+- Inventory consistency.
+- Financial reporting.
+- Scheduler reliability.
+- Queue worker reliability.
+- Logging and monitoring.
+
+## Required testing
+
+Run:
+
+1. Stripe sandbox tests.
+2. PayPal sandbox tests.
+3. Bank Transfer feature tests.
+4. COD feature tests.
+5. Refund reliability tests.
+6. Payment security tests.
+7. Webhook security tests.
+8. Inventory race tests.
+9. Independent-process concurrency tests.
+10. Full Laravel test suite.
+11. Next.js production build.
+12. TypeScript checks.
+
+Do not use live payment credentials or real money.
+
+## Mandatory MySQL rules
+
+- Every PHPUnit and feature test must use MySQL.
+- Dedicated database: `fashion_ecommerce_test`.
+- Never use SQLite, including `:memory:`.
+- Never run destructive migrations against development or production.
+- Verify MySQL connection before destructive testing.
+- Run the full Laravel test suite on MySQL.
+- Run concurrency tests using independent processes against MySQL.
+- Report the actual database engine and database name for every suite.
+- If MySQL is unavailable, stop. No SQLite fallback.
+- SQLite test results are invalid evidence.
+
+## Final report
+
+Include:
+
+### 1. Provider status
+
+| Provider | Integration | Sandbox verified | Live readiness |
+|---|---|---|---|
+| Stripe | Actual status | Actual result | Actual result |
+| PayPal | Actual status | Actual result | Actual result |
+| Bank Transfer | Actual status | Actual result | Actual result |
+| COD | Actual status | Actual result | Actual result |
+| Test Gateway | Actual status | Actual result | Must never be live |
+
+### 2. Security status
+
+Report credential, permission, webhook and environment-isolation results.
+
+### 3. Refund reliability
+
+Report outbox, external idempotency, reconciliation and crash recovery.
+
+### 4. Test results
+
+For every suite include:
+
+- Exact command.
+- Tests passed.
+- Tests failed.
+- Assertions.
+- Skipped tests.
+- Database engine.
+- Database name.
+- MySQL version.
+
+### 5. Remaining blockers
+
+List every unresolved production blocker.
+
+### 6. Final verdict
+
+Provide separate verdicts:
+
+- Development readiness.
+- Sandbox readiness.
+- Production readiness.
+
+Never declare production readiness based solely on TestGateway or local simulation.
+
+---
+
+# GLOBAL INSTRUCTIONS FOR EVERY PHASE
+
+These rules override any conflicting existing test configuration or implementation shortcut.
+
+## A. MySQL is mandatory
+
+All automated testing and verification must use MySQL.
+
+- `DB_CONNECTION=mysql`
+- `DB_DATABASE=fashion_ecommerce_test`
+
+SQLite is prohibited, including `:memory:`.
+
+Before running tests, inspect:
+
+- `phpunit.xml`
+- `.env.testing`
+- `config/database.php`
+- Test base classes.
+- Test traits.
+- CI configuration.
+- Environment overrides.
+
+Add or verify a hard safety guard before destructive operations.
+
+Verify:
+
+`SELECT VERSION();`
+
+`SELECT DATABASE();`
+
+If the connection is not MySQL or the database is not the dedicated test database, abort.
+
+Never run destructive migrations, resets, truncations or cleanup against development or production databases.
+
+If MySQL is unavailable, report BLOCKED. Never fall back to SQLite.
+
+## B. Concurrency verification
+
+Concurrency tests must use independent OS processes connected to the same dedicated MySQL database.
+
+Sequential function calls do not prove concurrency safety.
+
+## C. Evidence requirements
+
+For every test run report:
+
+- Exact command.
+- Actual database engine.
+- Actual database name.
+- Test count.
+- Assertion count.
+- Passed tests.
+- Failed tests.
+- Skipped tests.
+
+Do not invent test results.
+
+## D. Implementation discipline
+
+- Inspect before editing.
+- Preserve existing working functionality.
+- No unrelated modifications.
+- No fake data presented as real provider activity.
+- No fake gateway integration.
+- No hardcoded credentials.
+- No secrets in logs or API responses.
+- No destructive production operations.
+- Do not claim completion without evidence.
+- Report changed files.
+- Report known limitations.
+- Ask for approval between phases.
+
+**End of specification.**

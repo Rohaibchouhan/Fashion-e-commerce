@@ -8,6 +8,12 @@ class CheckoutRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        $user = $this->user('sanctum') ?? $this->user();
+        if ($user && $user->status !== 'active') {
+            $user->currentAccessToken()?->delete();
+            abort(403, 'Your account has been suspended. Please contact customer support.');
+        }
+
         return true;
     }
 

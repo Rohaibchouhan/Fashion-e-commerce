@@ -96,9 +96,15 @@ export const QuickViewModal: React.FC = () => {
                 </span>
               )}
               <div className="flex items-center gap-1 text-xs text-neutral-600 ml-auto">
-                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                <span className="font-bold">{product.rating}</span>
-                <span className="text-neutral-400">({product.reviewCount})</span>
+                {product.reviewCount > 0 ? (
+                  <>
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span className="font-bold">{product.rating.toFixed(1)}</span>
+                    <span className="text-neutral-400">({product.reviewCount})</span>
+                  </>
+                ) : (
+                  <span className="text-neutral-400 text-[11px]">0 reviews</span>
+                )}
               </div>
             </div>
           </div>

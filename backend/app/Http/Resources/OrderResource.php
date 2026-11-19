@@ -20,6 +20,7 @@ class OrderResource extends JsonResource
             'fulfillmentStatus' => $this->fulfillment_status->value,
             'trackingNumber' => $this->tracking_number ?? 'Pending Allocation',
             'carrier' => $this->carrier ?? 'Standard Ground',
+            'trackingUrl' => $this->tracking_url,
             'estimatedDelivery' => $this->estimated_delivery ? $this->estimated_delivery->toDateString() : null,
             'items' => $this->items->map(fn ($item) => [
                 'id' => (string) $item->id,

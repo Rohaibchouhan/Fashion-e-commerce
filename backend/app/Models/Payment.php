@@ -42,5 +42,23 @@ class Payment extends Model
     {
         return $this->hasMany(PaymentTransaction::class);
     }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(Refund::class);
+    }
+
+    public function getRefundedAmountAttribute(): float
+    {
+        return (float) $this->transactions()
+            ->where('type', 'refund')
+            ->where('status', 'success')
+            ->sum('amount');
+    }
+
+    public function getRemainingRefundableAmountAttribute(): float
+    {
+        return max(0.00, round((float) $this->amount - $this->refunded_amount, 2));
+    }
 }
 

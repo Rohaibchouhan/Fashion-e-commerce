@@ -18,16 +18,40 @@ export default function OrderTrackingPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderQuery.trim()) return;
 
+    if (!emailQuery.trim()) {
+      setErrorMessage("Please enter the email address or ZIP code associated with the order.");
+      setHasSearched(true);
+      setOrder(null);
+      return;
+    }
+
     setIsSearching(true);
     setHasSearched(true);
-    const result = await OrdersService.track(orderQuery);
-    setOrder(result);
-    setIsSearching(false);
+    setErrorMessage(null);
+
+    try {
+      const result = await OrdersService.track(orderQuery, emailQuery);
+      setOrder(result);
+      if (!result) {
+        setErrorMessage(`No shipment found matching order "${orderQuery}" and the provided credentials.`);
+      }
+    } catch (err: any) {
+      setOrder(null);
+      const msg =
+        err?.data?.message ||
+        err?.response?.data?.message ||
+        err?.message ||
+        `No shipment found matching order "${orderQuery}".`;
+      setErrorMessage(msg);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   return (
@@ -55,10 +79,14 @@ export default function OrderTrackingPage() {
               required
             />
             <Input
-              label="Email Address or Zip"
-              placeholder="alex@example.com"
+              label="Email Address or Zip *"
+              placeholder="e.g. alex.morgan@example.com or 11201"
               value={emailQuery}
-              onChange={(e) => setEmailQuery(e.target.value)}
+              onChange={(e) => {
+                setEmailQuery(e.target.value);
+                setErrorMessage(null);
+              }}
+              required
             />
           </div>
           <Button type="submit" isLoading={isSearching} className="w-full h-12 rounded-full font-bold text-xs">
@@ -96,6 +124,16 @@ export default function OrderTrackingPage() {
                   </span>
                   <p className="text-xs font-bold text-neutral-900">{order.carrier}</p>
                   <p className="text-[11px] text-neutral-500 font-mono">{order.trackingNumber}</p>
+                  {order.trackingUrl && (
+                    <a
+                      href={order.trackingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-semibold text-blue-600 hover:underline mt-0.5 inline-block"
+                    >
+                      Track with Carrier &rarr;
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -173,7 +211,7 @@ export default function OrderTrackingPage() {
               <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
               <h3 className="text-sm font-bold text-neutral-900">Order Not Located</h3>
               <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-                We could not find an order matching "{orderQuery}". Please verify the order number on your confirmation email.
+                {errorMessage || `We could not find an order matching "${orderQuery}". Please verify the order number on your confirmation email.`}
               </p>
             </div>
           )}

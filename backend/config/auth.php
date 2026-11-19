@@ -114,4 +114,19 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Authentication Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Maximum allowed attempts per minute for sensitive authentication endpoints.
+    |
+    */
+    'rate_limiting' => [
+        'login' => env('AUTH_RATE_LIMIT_LOGIN', 10),
+        'register' => env('AUTH_RATE_LIMIT_REGISTER', 10),
+        'forgot_password' => env('AUTH_RATE_LIMIT_FORGOT_PASSWORD', 5),
+        'reset_password' => env('AUTH_RATE_LIMIT_RESET_PASSWORD', 5),
+    ],
+
 ];

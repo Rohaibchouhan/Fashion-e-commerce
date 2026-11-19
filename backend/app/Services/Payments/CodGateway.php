@@ -30,11 +30,16 @@ class CodGateway implements PaymentGatewayInterface
         ];
     }
 
-    public function processRefund(Payment $payment, float $amount, ?string $reason = null): array
+    public function processRefund(Payment $payment, float $amount, ?string $reason = null, ?string $idempotencyKey = null): array
     {
+        $refundId = $idempotencyKey
+            ? 'REF-COD-' . strtoupper(substr(md5($idempotencyKey), 0, 10))
+            : 'REF-COD-' . Str::upper(Str::random(8));
+
         return [
             'success' => true,
-            'refund_id' => 'REF-COD-' . Str::upper(Str::random(8)),
+            'refund_id' => $refundId,
+            'idempotency_key' => $idempotencyKey,
             'message' => 'COD cash/bank refund logged for manual payout.',
         ];
     }

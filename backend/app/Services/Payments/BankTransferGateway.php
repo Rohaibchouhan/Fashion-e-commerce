@@ -72,11 +72,16 @@ class BankTransferGateway implements PaymentGatewayInterface
         ];
     }
 
-    public function processRefund(Payment $payment, float $amount, ?string $reason = null): array
+    public function processRefund(Payment $payment, float $amount, ?string $reason = null, ?string $idempotencyKey = null): array
     {
+        $refundId = $idempotencyKey
+            ? 'REF-WIRE-' . strtoupper(substr(md5($idempotencyKey), 0, 10))
+            : 'REF-WIRE-' . Str::upper(Str::random(8));
+
         return [
             'success' => true,
-            'refund_id' => 'REF-WIRE-' . Str::upper(Str::random(8)),
+            'refund_id' => $refundId,
+            'idempotency_key' => $idempotencyKey,
             'message' => 'Bank wire refund scheduled for dispatch.',
         ];
     }

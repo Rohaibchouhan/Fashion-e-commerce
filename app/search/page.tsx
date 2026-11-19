@@ -50,7 +50,9 @@ function SearchPageContent() {
           Search Results
         </h1>
         <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-          Showing {products.length} styles for "{searchTerm || "all products"}"
+          {isLoading
+            ? "Searching styles..."
+            : `Showing ${products.length} styles for "${searchTerm || "all products"}"`}
         </p>
       </div>
 

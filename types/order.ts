@@ -47,6 +47,7 @@ export interface Order {
   fulfillmentStatus: FulfillmentStatus;
   trackingNumber: string;
   carrier: string;
+  trackingUrl?: string | null;
   estimatedDelivery: string;
   items: OrderItem[];
   subtotal: number;

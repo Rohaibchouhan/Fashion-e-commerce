@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -11,9 +11,12 @@ import { AuthService } from "@/services/auth.service";
 import { Lock, ArrowRight, Sparkles, UserCheck } from "lucide-react";
 import { APP_CONFIG } from "@/constants";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
+
+  const redirectUrl = searchParams.get("redirect") || "/account";
 
   const [email, setEmail] = useState("alex.morgan@example.com");
   const [password, setPassword] = useState("Password123!");
@@ -49,7 +52,7 @@ export default function LoginPage() {
       const res = await AuthService.login(email, password);
       setAuth(res.user, res.token);
       toast.success("Welcome Back", `Signed in as ${res.user.name}.`);
-      router.push("/account");
+      router.push(redirectUrl);
     } catch (err: any) {
       if (err.errors) {
         const mappedErrors: Record<string, string> = {};
@@ -72,7 +75,7 @@ export default function LoginPage() {
       const res = await AuthService.login("alex.morgan@example.com", "Password123!");
       setAuth(res.user, res.token);
       toast.success("Demo Account Activated", "Signed in as Alex Morgan.");
-      router.push("/account");
+      router.push(redirectUrl);
     } catch (err: any) {
       toast.error("Sign In Failed", err.message || "Could not sign in with demo credentials.");
     } finally {
@@ -164,5 +167,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[75vh] flex items-center justify-center text-xs text-neutral-400">Loading sign in...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

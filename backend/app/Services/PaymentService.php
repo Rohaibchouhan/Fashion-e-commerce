@@ -4,9 +4,13 @@ namespace App\Services;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
+use App\Models\ActivityLog;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentTransaction;
+use App\Models\Refund;
+use App\Models\RefundTransaction;
+use App\Models\User;
 use App\Services\Payments\BankTransferGateway;
 use App\Services\Payments\CardGateway;
 use App\Services\Payments\CodGateway;
@@ -358,35 +362,208 @@ class PaymentService
         }, 3);
     }
 
-    public function refundPayment(Payment $payment, float $amount, ?string $reason = null): array
-    {
-        if ($amount > (float) $payment->amount) {
-            throw new Exception("Refund amount (\${$amount}) cannot exceed original payment amount (\${$payment->amount}).");
+    public function refundPayment(
+        Payment $payment,
+        float $amount,
+        ?string $reason = null,
+        ?string $idempotencyKey = null
+    ): array {
+        if ($amount <= 0) {
+            throw new Exception("Refund amount must be greater than zero.");
         }
 
-        $gateway = $this->getGateway($payment->payment_method);
-        $result = $gateway->processRefund($payment, $amount, $reason);
+        return DB::transaction(function () use ($payment, $amount, $reason, $idempotencyKey) {
+            // Pessimistic lock on payment row
+            $paymentLocked = Payment::where('id', $payment->id)->lockForUpdate()->firstOrFail();
 
-        if (!empty($result['success'])) {
-            PaymentTransaction::create([
-                'payment_id' => $payment->id,
-                'type' => 'refund',
-                'amount' => $amount,
-                'reference_id' => $result['refund_id'] ?? null,
-                'status' => 'success',
-                'raw_payload' => $result,
+            // 1. Idempotency Check: if this idempotency key was already successfully refunded, replay existing result
+            if ($idempotencyKey) {
+                $existingTxn = PaymentTransaction::where('payment_id', $paymentLocked->id)
+                    ->where('type', 'refund')
+                    ->where('status', 'success')
+                    ->where(function ($q) use ($idempotencyKey) {
+                        $q->where('reference_id', $idempotencyKey)
+                            ->orWhere('raw_payload->idempotency_key', $idempotencyKey)
+                            ->orWhereJsonContains('raw_payload->idempotency_key', $idempotencyKey);
+                    })
+                    ->first();
+
+                if ($existingTxn) {
+                    $payload = $existingTxn->raw_payload ?? [];
+                    $payload['success'] = true;
+                    $payload['refund_id'] = $existingTxn->reference_id;
+                    $payload['idempotency_key'] = $idempotencyKey;
+                    $payload['idempotent_replay'] = true;
+                    $payload['message'] = 'Refund already processed (idempotent replay).';
+
+                    return $payload;
+                }
+            }
+
+            // 2. Authoritative check on accumulated previous successful refunds
+            $totalRefunded = (float) PaymentTransaction::where('payment_id', $paymentLocked->id)
+                ->where('type', 'refund')
+                ->where('status', 'success')
+                ->sum('amount');
+
+            $remainingRefundable = max(0.00, round((float) $paymentLocked->amount - $totalRefunded, 2));
+
+            if ($remainingRefundable <= 0.00) {
+                throw new Exception("Payment #{$paymentLocked->id} has already been fully refunded.");
+            }
+
+            if ($amount > $remainingRefundable) {
+                throw new Exception("Requested refund amount (\${$amount}) exceeds remaining refundable balance (\${$remainingRefundable}).");
+            }
+
+            // 3. Dispatch to Gateway with idempotency key
+            $gateway = $this->getGateway($paymentLocked->payment_method);
+            $result = $gateway->processRefund($paymentLocked, $amount, $reason, $idempotencyKey);
+
+            if (!empty($result['success'])) {
+                PaymentTransaction::create([
+                    'payment_id' => $paymentLocked->id,
+                    'type' => 'refund',
+                    'amount' => $amount,
+                    'reference_id' => $result['refund_id'] ?? null,
+                    'status' => 'success',
+                    'raw_payload' => array_merge($result, [
+                        'idempotency_key' => $idempotencyKey,
+                    ]),
+                ]);
+
+                $newTotalRefunded = round($totalRefunded + $amount, 2);
+                $newStatus = ($newTotalRefunded >= (float) $paymentLocked->amount)
+                    ? PaymentStatus::REFUNDED
+                    : PaymentStatus::PARTIALLY_REFUNDED;
+
+                $paymentLocked->update(['status' => $newStatus]);
+                $paymentLocked->order?->update(['payment_status' => $newStatus]);
+
+                return $result;
+            }
+
+            throw new Exception($result['message'] ?? 'Refund failed at payment gateway.');
+        }, 3);
+    }
+
+    public function retryRefund(Refund $refund, ?User $actor = null): Refund
+    {
+        return DB::transaction(function () use ($refund, $actor) {
+            // Lock refund row
+            $refundLocked = Refund::where('id', $refund->id)->lockForUpdate()->firstOrFail();
+
+            // 1. Never retry an already successful refund
+            if ($refundLocked->status === 'processed') {
+                throw new Exception("Refund #{$refundLocked->refund_number} has already been processed successfully and cannot be retried.");
+            }
+
+            // 2. Only eligible failed or pending refunds can be retried
+            if (!in_array($refundLocked->status, ['failed', 'pending'])) {
+                throw new Exception("Refund #{$refundLocked->refund_number} with status '{$refundLocked->status}' is not eligible for retry.");
+            }
+
+            // 3. Prevent concurrent duplicate retries: set status temporarily to 'pending'
+            $refundLocked->update([
+                'status' => 'pending',
+                'notes' => 'Retry in progress...',
             ]);
 
-            $newStatus = ($amount >= (float) $payment->amount)
-                ? PaymentStatus::REFUNDED
-                : PaymentStatus::PARTIALLY_REFUNDED;
+            // Lock parent payment
+            $payment = Payment::where('id', $refundLocked->payment_id)->lockForUpdate()->firstOrFail();
 
-            $payment->update(['status' => $newStatus]);
-            $payment->order->update(['payment_status' => $newStatus]);
+            // 4. Verify remaining balance
+            $totalRefunded = (float) PaymentTransaction::where('payment_id', $payment->id)
+                ->where('type', 'refund')
+                ->where('status', 'success')
+                ->sum('amount');
+            $remaining = max(0.00, round((float) $payment->amount - $totalRefunded, 2));
 
-            return $result;
-        }
+            if ((float) $refundLocked->amount > $remaining) {
+                throw new Exception("Refund amount (\${$refundLocked->amount}) exceeds remaining refundable balance (\${$remaining}).");
+            }
 
-        throw new Exception($result['message'] ?? 'Refund failed at payment gateway.');
+            $idempotencyKey = $refundLocked->refund_number;
+
+            try {
+                $gateway = $this->getGateway($payment->payment_method);
+                $result = $gateway->processRefund($payment, (float) $refundLocked->amount, $refundLocked->reason, $idempotencyKey);
+
+                if (empty($result['success'])) {
+                    throw new Exception($result['message'] ?? 'Gateway rejected retry.');
+                }
+
+                // Success: update Refund
+                $refundLocked->update([
+                    'status' => 'processed',
+                    'gateway_refund_id' => $result['refund_id'] ?? null,
+                    'processed_by' => $actor?->id ?? auth()->id(),
+                    'processed_at' => now(),
+                    'notes' => 'Refund retried and processed successfully.',
+                ]);
+
+                // Create RefundTransaction attempt
+                RefundTransaction::create([
+                    'refund_id' => $refundLocked->id,
+                    'amount' => $refundLocked->amount,
+                    'gateway' => $payment->payment_method ?? 'card',
+                    'reference' => $result['refund_id'] ?? null,
+                    'status' => 'success',
+                    'response_payload' => $result,
+                ]);
+
+                // Create PaymentTransaction
+                PaymentTransaction::create([
+                    'payment_id' => $payment->id,
+                    'type' => 'refund',
+                    'amount' => $refundLocked->amount,
+                    'reference_id' => $result['refund_id'] ?? null,
+                    'status' => 'success',
+                    'raw_payload' => array_merge($result, [
+                        'idempotency_key' => $idempotencyKey,
+                    ]),
+                ]);
+
+                // Update payment and order statuses
+                $newTotalRefunded = round($totalRefunded + (float) $refundLocked->amount, 2);
+                $newStatus = ($newTotalRefunded >= (float) $payment->amount)
+                    ? PaymentStatus::REFUNDED
+                    : PaymentStatus::PARTIALLY_REFUNDED;
+
+                $payment->update(['status' => $newStatus]);
+                $payment->order?->update(['payment_status' => $newStatus]);
+
+                // Audit log
+                ActivityLog::log(
+                    'refund.retried_success',
+                    "Refund #{$refundLocked->refund_number} for Order #{$refundLocked->order->order_number} retried successfully.",
+                    $refundLocked
+                );
+
+                return $refundLocked->fresh(['order', 'payment', 'transactions']);
+            } catch (Exception $e) {
+                $refundLocked->update([
+                    'status' => 'failed',
+                    'notes' => 'Retry failed: ' . $e->getMessage(),
+                ]);
+
+                RefundTransaction::create([
+                    'refund_id' => $refundLocked->id,
+                    'amount' => $refundLocked->amount,
+                    'gateway' => $payment->payment_method ?? 'card',
+                    'reference' => null,
+                    'status' => 'failed',
+                    'response_payload' => ['error' => $e->getMessage()],
+                ]);
+
+                ActivityLog::log(
+                    'refund.retried_failed',
+                    "Retry of Refund #{$refundLocked->refund_number} failed: {$e->getMessage()}",
+                    $refundLocked
+                );
+
+                throw $e;
+            }
+        }, 3);
     }
 }
